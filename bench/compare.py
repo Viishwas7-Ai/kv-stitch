@@ -19,6 +19,36 @@ import os, sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from kvstitch import Stitcher  # noqa: E402
 
+def parse_json(text):
+    """First JSON object in the output, or None."""
+    start = text.find("{")
+    if start < 0:
+        return None
+    try:
+        return json.JSONDecoder().raw_decode(text[start:])[0]
+    except ValueError:
+        return None
+
+
+def actions(obj):
+    try:
+        return [step.get("action") for step in obj.get("plan", [])]
+    except AttributeError:
+        return None
+
+
+def verdict(out, ref):
+    """'text' identical > 'json' same JSON (spacing differs) > 'actions' same steps > 'DIFF'."""
+    if out.strip() == ref.strip():
+        return "text"
+    a, b = parse_json(out), parse_json(ref)
+    if a is not None and a == b:
+        return "json"
+    if a is not None and b is not None and actions(a) == actions(b) and actions(a):
+        return "actions"
+    return "DIFF"
+
+
 ap = argparse.ArgumentParser()
 ap.add_argument("model")
 ap.add_argument("cases")
@@ -57,7 +87,9 @@ refreshes = [int(x) for x in a.refresh.split(",")]
 c0 = spec["cases"][0]                     # warm-up so the first timed run isn't paying GPU setup
 st.run_full(c0["modules"], c0["tail"], 4)
 st.run(c0["modules"], c0["tail"], 4)
-rows, same = [], {r: 0 for r in refreshes}
+rows = []
+levels = ("text", "json", "actions")
+same = {r: {k: 0 for k in levels} for r in refreshes}
 full_t, stitch_t = [], {r: [] for r in refreshes}
 full_p, stitch_p = [], {r: [] for r in refreshes}
 for i, c in enumerate(spec["cases"]):
@@ -70,13 +102,16 @@ for i, c in enumerate(spec["cases"]):
         out, ts = st.run(c["modules"], c["tail"], a.max_tokens, refresh=r)
         stitch_t[r].append(ts.load_s + ts.tail_s + ts.gen_s)
         stitch_p[r].append(ts.load_s + ts.tail_s)
-        same[r] += out.strip() == ref.strip()
+        v = verdict(out, ref)
+        for k in levels[levels.index(v):] if v in levels else ():
+            same[r][k] += 1
+        row[f"stitched_r{r}_verdict"] = v
         row[f"stitched_r{r}"] = out
         row[f"stitched_r{r}_prompt_s"] = round(ts.load_s + ts.tail_s, 3)
     rows.append(row)
     print(f"[{i + 1}/{len(spec['cases'])}] {'+'.join(c['modules']) or '-'} ({tf.tail_tokens} prompt tokens): "
           f"full prompt {tf.tail_s:.2f}s | "
-          + " ".join(f"r{r}={'same' if row[f'stitched_r{r}'].strip() == ref.strip() else 'DIFF'}"
+          + " ".join(f"r{r}={row[f'stitched_r{r}_verdict']}"
                      f" {row[f'stitched_r{r}_prompt_s']:.2f}s" for r in refreshes))
     if a.show:
         print("  full:", ref.strip().replace("\n", " ")[:400])
@@ -90,7 +125,9 @@ if empty:
           "For chat models (granite, qwen, ...) add --chat.")
 print(f"\n{n} cases | full: prompt {stats.median(full_p):.2f}s, total {stats.median(full_t):.2f}s (medians)")
 for r in refreshes:
-    print(f"refresh={r:<3} identical outputs: {same[r]}/{n} ({100 * same[r] / n:.1f}%) | "
+    sr = same[r]
+    print(f"refresh={r:<3} same text {sr['text']}/{n} | same JSON {sr['json']}/{n} | "
+          f"same actions {sr['actions']}/{n} | "
           f"prompt {stats.median(stitch_p[r]):.2f}s, total {stats.median(stitch_t[r]):.2f}s")
 json.dump(rows, open(a.out, "w"), indent=1)
 print("details ->", a.out)
