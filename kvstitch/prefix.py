@@ -34,7 +34,11 @@ class PrefixCache:
         return toks
 
     def key(self, names: list[str]) -> str:
+        """Same model file, same context size and the exact same tokens -> same cache."""
         h = hashlib.sha1()
+        st = self.st
+        mf = os.stat(st.model_path)
+        h.update(f"{st.model_path}|{mf.st_size}|{int(mf.st_mtime)}|{st.n_ctx}|".encode())
         for t in self._tokens(names):
             h.update(t.to_bytes(4, "little"))
         return h.hexdigest()[:20]

@@ -49,6 +49,8 @@ class Stitcher:
                  n_threads: int | None = None, verbose: bool = False):
         # Llama gives us the model, tokenizer and default params; we make our own
         # context because stitching needs 2 sequences sharing one (unified) KV cache.
+        self.model_path = os.path.abspath(model_path)
+        self.n_ctx = n_ctx
         self.llm = lc.Llama(model_path=model_path, n_ctx=n_ctx, n_gpu_layers=n_gpu_layers,
                             n_threads=n_threads, logits_all=False, verbose=verbose)
         p = self.llm.context_params
