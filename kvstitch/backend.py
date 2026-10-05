@@ -159,7 +159,8 @@ class PlannerBackend:
         return self._pc.warm(combos, pin=True)
 
     def add_workflows(self, model: str, workflows: list[Workflow],
-                      build: Callable[[list[str]], tuple[str, list[Piece]]]) -> dict:
+                      build: Callable[[list[str]], tuple[str, list[Piece]]],
+                      progress: Callable[[str], None] | None = None) -> dict:
         """Warm and pin every workflow for `model` (first launch, or after the workflow file changed).
 
         build(module_names) -> (header, pieces): the app's own prompt builder for those modules,
@@ -179,8 +180,14 @@ class PlannerBackend:
             combos = [names]                           # the whole prefix for exactly this workflow
             if module_idx and module_idx[-1] + 1 < len(names):
                 combos.append(names[: module_idx[-1] + 1])   # the start: up to its last module
-            report["built"] += self._pc.warm(combos, pin=True)
+            t0 = time.perf_counter()
+            n = self._pc.warm(combos, pin=True)
+            report["built"] += n
             report["workflows"] += 1
+            if progress:
+                progress(f"  {wf.name} ({', '.join(wf.modules)}): "
+                         f"{'built ' + str(n) + ' cache(s)' if n else 'already cached'} "
+                         f"in {time.perf_counter() - t0:.1f}s")
         return report
 
     def stats(self) -> dict:

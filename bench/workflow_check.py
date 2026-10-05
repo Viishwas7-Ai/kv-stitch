@@ -45,9 +45,12 @@ for line in open(a.tests):
 
 be = PlannerBackend({a.model_name: a.model}, a.cache_dir, n_ctx=a.n_ctx, chat=not a.no_chat,
                     max_tokens=a.max_tokens, save_after=2)
+be._load(a.model_name)
+wfs = load_workflows(a.workflows)
+print(f"warming {len(wfs)} workflow(s) — each one is built once, then it is fast:", flush=True)
 t0 = time.perf_counter()
-rep = be.add_workflows(a.model_name, load_workflows(a.workflows),
-                       lambda mods: builder.build(mods, "")[:2])
+rep = be.add_workflows(a.model_name, wfs, lambda mods: builder.build(mods, "")[:2],
+                       progress=lambda m: print(m, flush=True))
 print(f"workflows warmed: {rep['workflows']}, caches built: {rep['built']} "
       f"in {time.perf_counter() - t0:.1f}s" + (f", skipped: {rep['skipped']}" if rep["skipped"] else ""))
 
@@ -65,7 +68,7 @@ for i, (mods, cmd) in enumerate(tests, 1):
     plan_t.append(res.seconds)
     paths[res.path] = paths.get(res.path, 0) + 1
     print(f"[{i}/{len(tests)}] {'+'.join(mods)}: full {ft:.2f}s | {res.path} {res.seconds:.2f}s "
-          f"{'same' if ok else 'DIFF'}  — {cmd[:60]}")
+          f"{'same' if ok else 'DIFF'}  — {cmd[:60]}", flush=True)
     if a.show:
         print("  plan:", res.text.strip().replace("\n", " "))
 
