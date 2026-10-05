@@ -17,7 +17,7 @@ import time
 
 import os, sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from kvstitch import Stitcher  # noqa: E402
+from kvstitch import PrefixCache, Stitcher  # noqa: E402
 
 def parse_json(text):
     """First JSON object in the output, or None."""
@@ -54,7 +54,8 @@ ap.add_argument("model")
 ap.add_argument("cases")
 ap.add_argument("--refresh", default="0", help="comma list of tokens to recompute per join")
 ap.add_argument("--variants", default=None,
-                help="comma list like r0,r64,f1500,m1,m2,mall (r=refresh tokens per join, "
+                help="comma list like p,r0,r64,f1500,m1,m2,mall (p=exact prefix cache, warm; "
+                     "r=refresh tokens per join, "
                      "f=tokens of the last pieces computed fresh, mN/mall=the last N / all "
                      "pieces whose name is not in --fixed computed fresh); overrides --refresh")
 ap.add_argument("--fixed", default="GLUE,TERMINAL,OS,TEXT_RULE,RULE",
@@ -64,6 +65,8 @@ ap.add_argument("--n-ctx", type=int, default=8192)
 ap.add_argument("--gpu-layers", type=int, default=-1)
 ap.add_argument("--out", default="compare_results.json")
 ap.add_argument("--show", action="store_true", help="print every output")
+ap.add_argument("--prefix-dir", default=None, help="save exact prefix caches here (variant p)")
+ap.add_argument("--prefix-mem", type=int, default=8, help="prefix caches kept in memory (variant p)")
 ap.add_argument("--chat", action="store_true",
                 help="wrap header/tail in the model's chat template (needed for chat models like granite)")
 ap.add_argument("--prefix", help="with --chat: override the text before the prompt")
@@ -91,6 +94,8 @@ print(f"precomputed header + {len(spec['modules'])} modules in {time.perf_counte
 
 import re as _re
 def _variant(v):
+    if v == "p":
+        return v, 0, 0
     mm = _re.fullmatch(r"m(\d+|all)", v)
     if mm:
         return v, 0, ("all" if mm.group(1) == "all" else int(mm.group(1)))
@@ -113,6 +118,7 @@ _cfg = {v: (r, f) for v, r, f in specs}
 c0 = spec["cases"][0]                     # warm-up so the first timed run isn't paying GPU setup
 st.run_full(c0["modules"], c0["tail"], 4)
 st.run(c0["modules"], c0["tail"], 4)
+pc = PrefixCache(st, cache_dir=a.prefix_dir, max_in_memory=a.prefix_mem)
 rows = []
 levels = ("text", "json", "actions")
 same = {r: {k: 0 for k in levels} for r in refreshes}
@@ -126,7 +132,12 @@ for i, c in enumerate(spec["cases"]):
            "full_prompt_s": round(tf.tail_s, 3), "gen_s": round(tf.gen_s, 3)}
     for r in refreshes:
         _r, _f = _cfg[r]
-        if r.startswith("m"):
+        if r == "p":
+            if not pc.has(c["modules"]):          # first time this combination: build it once
+                _, tcold = pc.run(c["modules"], c["tail"], 1)
+                row["p_cold_prompt_s"] = round(tcold.load_s + tcold.tail_s, 3)
+            out, ts = pc.run(c["modules"], c["tail"], a.max_tokens)
+        elif r.startswith("m"):
             out, ts = st.run(c["modules"], c["tail"], a.max_tokens,
                              fresh_idx=_action_idx(c["modules"], _f))
         else:

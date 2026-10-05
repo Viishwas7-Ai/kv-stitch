@@ -124,3 +124,18 @@ def test_fresh_idx_middle_piece(st):
     names = ["CREATE", "NOTES", "ZIP"]
     toks, pos = st.assemble(names, fresh_idx={1})
     assert pos == len(toks) == len(st.header.tokens) + sum(len(st.modules[n].tokens) for n in names)
+
+
+def test_prefix_cache_is_exact(st, tmp_path):
+    """Whole prefix computed once and reused == the full prompt, also after a disk round trip."""
+    from kvstitch import PrefixCache
+    names = ["CREATE", "NOTES", "ZIP"]
+    full, _ = st.run_full(names, TAIL, max_tokens=12)
+    pc = PrefixCache(st, cache_dir=str(tmp_path), max_in_memory=1)
+    cold, t1 = pc.run(names, TAIL, max_tokens=12)
+    warm, t2 = pc.run(names, TAIL, max_tokens=12)
+    assert not t1.extra["prefix_hit"] and t2.extra["prefix_hit"]
+    pc.mem.clear()                                     # force the disk copy
+    disk, t3 = pc.run(names, TAIL, max_tokens=12)
+    assert t3.extra["prefix_hit"]
+    assert full == cold == warm == disk
