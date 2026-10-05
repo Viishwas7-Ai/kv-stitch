@@ -54,8 +54,11 @@ ap.add_argument("model")
 ap.add_argument("cases")
 ap.add_argument("--refresh", default="0", help="comma list of tokens to recompute per join")
 ap.add_argument("--variants", default=None,
-                help="comma list like r0,r64,f1500,f1500r32 (r=refresh tokens per join, "
-                     "f=tokens of the last modules computed fresh); overrides --refresh")
+                help="comma list like r0,r64,f1500,m1,m2,mall (r=refresh tokens per join, "
+                     "f=tokens of the last pieces computed fresh, mN/mall=the last N / all "
+                     "pieces whose name is not in --fixed computed fresh); overrides --refresh")
+ap.add_argument("--fixed", default="GLUE,TERMINAL,OS,TEXT_RULE,RULE",
+                help="piece-name prefixes that are fixed text, always loaded from the cache by mN/mall")
 ap.add_argument("--max-tokens", type=int, default=400)
 ap.add_argument("--n-ctx", type=int, default=8192)
 ap.add_argument("--gpu-layers", type=int, default=-1)
@@ -88,10 +91,21 @@ print(f"precomputed header + {len(spec['modules'])} modules in {time.perf_counte
 
 import re as _re
 def _variant(v):
+    mm = _re.fullmatch(r"m(\d+|all)", v)
+    if mm:
+        return v, 0, ("all" if mm.group(1) == "all" else int(mm.group(1)))
     m = _re.fullmatch(r"(?:f(\d+))?(?:r(\d+))?", v)
     if not m or not v:
         raise SystemExit(f"bad variant {v!r}")
     return v, int(m.group(2) or 0), int(m.group(1) or 0)
+
+_FIXED = tuple(x.strip() for x in a.fixed.split(",") if x.strip())
+
+
+def _action_idx(names, want):
+    """Positions of the last `want` (or all) pieces that are not fixed text."""
+    idx = [i for i, n in enumerate(names) if not n.split("#")[0].startswith(_FIXED)]
+    return set(idx if want == "all" else idx[-want:] if want else [])
 specs = [_variant(v) for v in a.variants.split(",")] if a.variants else \
         [(f"r{int(x)}", int(x), 0) for x in a.refresh.split(",")]
 refreshes = [v for v, _, _ in specs]
@@ -111,7 +125,12 @@ for i, c in enumerate(spec["cases"]):
     row = {"case": i, "modules": c["modules"], "full": ref,
            "full_prompt_s": round(tf.tail_s, 3), "gen_s": round(tf.gen_s, 3)}
     for r in refreshes:
-        out, ts = st.run(c["modules"], c["tail"], a.max_tokens, refresh=_cfg[r][0], fresh=_cfg[r][1])
+        _r, _f = _cfg[r]
+        if r.startswith("m"):
+            out, ts = st.run(c["modules"], c["tail"], a.max_tokens,
+                             fresh_idx=_action_idx(c["modules"], _f))
+        else:
+            out, ts = st.run(c["modules"], c["tail"], a.max_tokens, refresh=_r, fresh=_f)
         stitch_t[r].append(ts.load_s + ts.tail_s + ts.gen_s)
         stitch_p[r].append(ts.load_s + ts.tail_s)
         v = verdict(out, ref)

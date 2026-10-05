@@ -160,8 +160,13 @@ class Stitcher:
         self.modules[name] = Block(toks, self._save(MAIN), h)
 
     # ---------- per request ----------
-    def assemble(self, names: list[str], refresh: int = 0) -> tuple[list[int], int]:
-        """Load header + modules into MAIN. Returns (all tokens, next position)."""
+    def assemble(self, names: list[str], refresh: int = 0,
+                 fresh_idx: set[int] | None = None) -> tuple[list[int], int]:
+        """Load header + modules into MAIN. Returns (all tokens, next position).
+
+        fresh_idx: positions in `names` that are decoded fresh instead of loaded, so they see
+        everything before them exactly. Cached pieces after them are still loaded (shifted).
+        """
         self.clear()
         self._load(self.header.state, MAIN)
         toks = list(self.header.tokens)
@@ -169,6 +174,11 @@ class Stitcher:
         for i, name in enumerate(names):
             b = self.modules[name]
             n = len(b.tokens)
+            if fresh_idx and i in fresh_idx:
+                self._decode(b.tokens, pos, MAIN)
+                toks += b.tokens
+                pos += n
+                continue
             # refresh: the first r tokens are decoded fresh, so they see every module
             # before them (the first module already saw exactly the header). llama.cpp
             # only accepts new tokens after the last position, so do this before the copy.
@@ -210,17 +220,20 @@ class Stitcher:
         return k
 
     def run(self, names: list[str], tail: str, max_tokens: int = 512,
-            stop: list[str] | None = None, refresh: int = 0, fresh: int = 0) -> tuple[str, Timing]:
+            stop: list[str] | None = None, refresh: int = 0, fresh: int = 0,
+            fresh_idx: set[int] | None = None) -> tuple[str, Timing]:
         """Stitched prompt: header + modules (cached) + tail (fresh).
 
         refresh: recompute the first N tokens of every module after the first (EPIC-style).
         fresh:   the last modules, up to N tokens in total, are not loaded from the cache but
                  computed fresh together with the tail, so they see everything before them.
+        fresh_idx: positions in `names` computed fresh wherever they are; the cached pieces
+                 around them are still loaded.
         """
         tm = Timing()
         k = self.split_fresh(names, fresh) if fresh else len(names)
         t0 = time.perf_counter()
-        _, pos = self.assemble(names[:k], refresh)
+        _, pos = self.assemble(names[:k], refresh, fresh_idx)
         tm.load_s = time.perf_counter() - t0
         tt = [t for n in names[k:] for t in self.modules[n].tokens] + self.tok(tail)
         tm.extra["fresh_modules"] = len(names) - k

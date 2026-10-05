@@ -109,3 +109,18 @@ def test_all_fresh_is_exact(st):
 def test_fresh_last_module_only(st):
     k = st.split_fresh(["CREATE", "NOTES", "ZIP"], len(st.modules["ZIP"].tokens))
     assert k == 2
+
+
+def test_fresh_idx_everything_is_exact(st):
+    """Every module decoded fresh in place == the full prompt."""
+    names = ["CREATE", "NOTES", "ZIP"]
+    full, _ = st.run_full(names, TAIL, max_tokens=12)
+    out, _ = st.run(names, TAIL, max_tokens=12, fresh_idx={0, 1, 2})
+    assert out == full
+
+
+def test_fresh_idx_middle_piece(st):
+    """A fresh piece in the middle with cached pieces after it still assembles every token."""
+    names = ["CREATE", "NOTES", "ZIP"]
+    toks, pos = st.assemble(names, fresh_idx={1})
+    assert pos == len(toks) == len(st.header.tokens) + sum(len(st.modules[n].tokens) for n in names)
