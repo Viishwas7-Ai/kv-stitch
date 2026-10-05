@@ -112,6 +112,25 @@ class Stitcher:
     def clear(self):
         lc.llama_memory_clear(self.mem, True)
 
+    def chat_wrap(self) -> tuple[str, str]:
+        """(prefix, suffix) that put a prompt inside the model's own chat template as
+        one user turn followed by the assistant's turn. Chat models (granite, qwen, ...)
+        often stop at once on a raw prompt; Ollama applies this template for you."""
+        from llama_cpp.llama_chat_format import Jinja2ChatFormatter
+        meta = self.llm.metadata
+        tmpl = meta.get("tokenizer.chat_template")
+        if not tmpl:
+            return "", ""
+        tok = lambda i: self.llm.detokenize([i], special=True).decode(errors="ignore") if i >= 0 else ""
+        bos = tok(lc.llama_vocab_bos(self.vocab))
+        eos = tok(lc.llama_vocab_eos(self.vocab))
+        mark = "\u0000KVSTITCH\u0000"
+        text = Jinja2ChatFormatter(tmpl, eos, bos)(messages=[{"role": "user", "content": mark}]).prompt
+        pre, suf = text.split(mark, 1)
+        if bos and pre.startswith(bos):   # set_header adds BOS itself
+            pre = pre[len(bos):]
+        return pre, suf
+
     def close(self):
         """Free the context and model. Safe to call more than once."""
         if getattr(self, "ctx", None):

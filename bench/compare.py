@@ -28,10 +28,25 @@ ap.add_argument("--n-ctx", type=int, default=8192)
 ap.add_argument("--gpu-layers", type=int, default=-1)
 ap.add_argument("--out", default="compare_results.json")
 ap.add_argument("--show", action="store_true", help="print every output")
+ap.add_argument("--chat", action="store_true",
+                help="wrap header/tail in the model's chat template (needed for chat models like granite)")
+ap.add_argument("--prefix", help="with --chat: override the text before the prompt")
+ap.add_argument("--suffix", help="with --chat: override the text after the prompt")
 a = ap.parse_args()
 
 spec = json.load(open(a.cases))
 st = Stitcher(a.model, n_ctx=a.n_ctx, n_gpu_layers=a.gpu_layers)
+if a.chat:
+    try:
+        pre, suf = st.chat_wrap()
+    except Exception as e:                      # some templates use features the renderer lacks
+        print(f"chat template could not be rendered ({e}); using --prefix/--suffix")
+        pre, suf = "", ""
+    pre, suf = a.prefix if a.prefix is not None else pre, a.suffix if a.suffix is not None else suf
+    print(f"chat template: prefix {pre!r} | suffix {suf!r}")
+    spec["header"] = pre + spec["header"]
+    for c in spec["cases"]:
+        c["tail"] = c["tail"] + suf
 t0 = time.perf_counter()
 st.set_header(spec["header"])
 for name, text in spec["modules"].items():
@@ -69,6 +84,10 @@ for i, c in enumerate(spec["cases"]):
             print(f"  r{r}: ", row[f"stitched_r{r}"].strip().replace("\n", " ")[:400])
 
 n = len(rows)
+empty = sum(1 for r in rows if not r["full"].strip())
+if empty:
+    print(f"\nWARNING: {empty}/{n} full-prompt outputs are EMPTY, so 'same' means nothing for them. "
+          "For chat models (granite, qwen, ...) add --chat.")
 print(f"\n{n} cases | full: prompt {stats.median(full_p):.2f}s, total {stats.median(full_t):.2f}s (medians)")
 for r in refreshes:
     print(f"refresh={r:<3} identical outputs: {same[r]}/{n} ({100 * same[r] / n:.1f}%) | "
