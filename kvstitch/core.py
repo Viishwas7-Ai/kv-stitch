@@ -201,14 +201,29 @@ class Stitcher:
             pos += 1
         return text, len(out)
 
+    def split_fresh(self, names: list[str], fresh: int) -> int:
+        """Index k: modules names[k:] (together at most `fresh` tokens) are computed fresh."""
+        k, total = len(names), 0
+        while k > 0 and total + len(self.modules[names[k - 1]].tokens) <= fresh:
+            k -= 1
+            total += len(self.modules[names[k]].tokens)
+        return k
+
     def run(self, names: list[str], tail: str, max_tokens: int = 512,
-            stop: list[str] | None = None, refresh: int = 0) -> tuple[str, Timing]:
-        """Stitched prompt: header + modules (cached) + tail (fresh)."""
+            stop: list[str] | None = None, refresh: int = 0, fresh: int = 0) -> tuple[str, Timing]:
+        """Stitched prompt: header + modules (cached) + tail (fresh).
+
+        refresh: recompute the first N tokens of every module after the first (EPIC-style).
+        fresh:   the last modules, up to N tokens in total, are not loaded from the cache but
+                 computed fresh together with the tail, so they see everything before them.
+        """
         tm = Timing()
+        k = self.split_fresh(names, fresh) if fresh else len(names)
         t0 = time.perf_counter()
-        _, pos = self.assemble(names, refresh)
+        _, pos = self.assemble(names[:k], refresh)
         tm.load_s = time.perf_counter() - t0
-        tt = self.tok(tail)
+        tt = [t for n in names[k:] for t in self.modules[n].tokens] + self.tok(tail)
+        tm.extra["fresh_modules"] = len(names) - k
         t0 = time.perf_counter()
         logits = self._decode(tt, pos, MAIN, want_last=True)
         tm.tail_s, tm.tail_tokens = time.perf_counter() - t0, len(tt)

@@ -96,3 +96,16 @@ def test_multi_module_divergence_is_reported(st):
     full = full_logits(st, toks + tail)
     top = lambda v: max(range(len(v)), key=v.__getitem__)
     print(f"\nmax |dlogit| = {diff(stitched, full):.4f}, same top token: {top(stitched) == top(full)}")
+
+
+def test_all_fresh_is_exact(st):
+    """fresh >= all module tokens: only the header is cached, which is exact."""
+    full, _ = st.run_full(["CREATE", "NOTES", "ZIP"], TAIL, max_tokens=12)
+    out, tm = st.run(["CREATE", "NOTES", "ZIP"], TAIL, max_tokens=12, fresh=10**6)
+    assert tm.extra["fresh_modules"] == 3
+    assert out == full
+
+
+def test_fresh_last_module_only(st):
+    k = st.split_fresh(["CREATE", "NOTES", "ZIP"], len(st.modules["ZIP"].tokens))
+    assert k == 2

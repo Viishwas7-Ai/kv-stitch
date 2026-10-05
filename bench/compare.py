@@ -53,6 +53,9 @@ ap = argparse.ArgumentParser()
 ap.add_argument("model")
 ap.add_argument("cases")
 ap.add_argument("--refresh", default="0", help="comma list of tokens to recompute per join")
+ap.add_argument("--variants", default=None,
+                help="comma list like r0,r64,f1500,f1500r32 (r=refresh tokens per join, "
+                     "f=tokens of the last modules computed fresh); overrides --refresh")
 ap.add_argument("--max-tokens", type=int, default=400)
 ap.add_argument("--n-ctx", type=int, default=8192)
 ap.add_argument("--gpu-layers", type=int, default=-1)
@@ -83,7 +86,16 @@ for name, text in spec["modules"].items():
     st.add_module(name, text)
 print(f"precomputed header + {len(spec['modules'])} modules in {time.perf_counter() - t0:.1f}s")
 
-refreshes = [int(x) for x in a.refresh.split(",")]
+import re as _re
+def _variant(v):
+    m = _re.fullmatch(r"(?:f(\d+))?(?:r(\d+))?", v)
+    if not m or not v:
+        raise SystemExit(f"bad variant {v!r}")
+    return v, int(m.group(2) or 0), int(m.group(1) or 0)
+specs = [_variant(v) for v in a.variants.split(",")] if a.variants else \
+        [(f"r{int(x)}", int(x), 0) for x in a.refresh.split(",")]
+refreshes = [v for v, _, _ in specs]
+_cfg = {v: (r, f) for v, r, f in specs}
 c0 = spec["cases"][0]                     # warm-up so the first timed run isn't paying GPU setup
 st.run_full(c0["modules"], c0["tail"], 4)
 st.run(c0["modules"], c0["tail"], 4)
@@ -99,24 +111,24 @@ for i, c in enumerate(spec["cases"]):
     row = {"case": i, "modules": c["modules"], "full": ref,
            "full_prompt_s": round(tf.tail_s, 3), "gen_s": round(tf.gen_s, 3)}
     for r in refreshes:
-        out, ts = st.run(c["modules"], c["tail"], a.max_tokens, refresh=r)
+        out, ts = st.run(c["modules"], c["tail"], a.max_tokens, refresh=_cfg[r][0], fresh=_cfg[r][1])
         stitch_t[r].append(ts.load_s + ts.tail_s + ts.gen_s)
         stitch_p[r].append(ts.load_s + ts.tail_s)
         v = verdict(out, ref)
         for k in levels[levels.index(v):] if v in levels else ():
             same[r][k] += 1
-        row[f"stitched_r{r}_verdict"] = v
-        row[f"stitched_r{r}"] = out
-        row[f"stitched_r{r}_prompt_s"] = round(ts.load_s + ts.tail_s, 3)
+        row[f"stitched_{r}_verdict"] = v
+        row[f"stitched_{r}"] = out
+        row[f"stitched_{r}_prompt_s"] = round(ts.load_s + ts.tail_s, 3)
     rows.append(row)
     print(f"[{i + 1}/{len(spec['cases'])}] {'+'.join(c['modules']) or '-'} ({tf.tail_tokens} prompt tokens): "
           f"full prompt {tf.tail_s:.2f}s | "
-          + " ".join(f"r{r}={row[f'stitched_r{r}_verdict']}"
-                     f" {row[f'stitched_r{r}_prompt_s']:.2f}s" for r in refreshes))
+          + " ".join(f"{r}={row[f'stitched_{r}_verdict']}"
+                     f" {row[f'stitched_{r}_prompt_s']:.2f}s" for r in refreshes))
     if a.show:
-        print("  full:", ref.strip().replace("\n", " ")[:400])
+        print("  full:", ref.strip().replace("\n", " "))
         for r in refreshes:
-            print(f"  r{r}: ", row[f"stitched_r{r}"].strip().replace("\n", " ")[:400])
+            print(f"  {r}: ", row[f"stitched_{r}"].strip().replace("\n", " "))
 
 n = len(rows)
 empty = sum(1 for r in rows if not r["full"].strip())
@@ -126,7 +138,7 @@ if empty:
 print(f"\n{n} cases | full: prompt {stats.median(full_p):.2f}s, total {stats.median(full_t):.2f}s (medians)")
 for r in refreshes:
     sr = same[r]
-    print(f"refresh={r:<3} same text {sr['text']}/{n} | same JSON {sr['json']}/{n} | "
+    print(f"{r:<10} same text {sr['text']}/{n} | same JSON {sr['json']}/{n} | "
           f"same actions {sr['actions']}/{n} | "
           f"prompt {stats.median(stitch_p[r]):.2f}s, total {stats.median(stitch_t[r]):.2f}s")
 json.dump(rows, open(a.out, "w"), indent=1)
