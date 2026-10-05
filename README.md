@@ -71,7 +71,7 @@ These tests check the cache plumbing on a tiny random model:
 
 ## Results
 
-**Setup:** MacBook Air M3, 8 GB RAM, `granite-4.0-micro` (Q4, 3B), llama-cpp-python with Metal, greedy decoding,
+**Setup:** MacBook with Apple M3, 8 GB RAM, `granite-4.0-micro` (Q4, 3B), llama-cpp-python with Metal, greedy decoding,
 the model's chat template (`--chat`). Prompts are a real **JSON tool-calling** prompt: a fixed header, tool-doc
 modules picked per request, OS context and rules, then the user command. The model must answer with a JSON plan
 of tool calls. "Same actions" means the stitched plan calls the same tools in the same order as the full prompt.
