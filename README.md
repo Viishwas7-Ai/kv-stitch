@@ -95,8 +95,24 @@ remaining prompt time.
   (4/12 → 11/12 identical) but did not rescue the 7-module prompts at 16–32 tokens.
 - **Caching the rules as many small pieces** made accuracy worse: every extra join costs a little.
 
-**Practical rule so far:** stitch when a request needs few modules, use the full prompt for the largest ones.
-Larger refresh values and computing the last modules fresh (`--variants r128,f1500,...`) are being measured next.
+**Variants on the 4-module prompts** (same 3 cases; `rN` = recompute N tokens per join,
+`fN` = the last modules, up to N tokens, computed fresh with the request):
+
+| Variant | Same actions | Prompt read | Total |
+|---|---|---|---|
+| full prompt | – | 31.2 s | 45.1 s |
+| r0 | 2/3 | 9.2 s | 22.9 s |
+| f800 | 2/3 | 7.7 s | 20.7 s |
+| r64 / r128 | 2/3 | 13.2–13.4 s | 26.9–30.8 s |
+| **f1500** | **3/3** | **17.5 s** | **36.2 s** |
+| f2500 | 3/3 | 29.8 s | 48.9 s |
+
+(This run was on a busier machine, so absolute times are higher than in the table above; compare rows with
+each other.) Larger refresh alone does not recover the hardest case (a 4-step chain where later steps depend
+on earlier ones); computing the last ~1,500 module tokens fresh does, at a much smaller speedup.
+
+**Practical rule so far:** 2–3 modules → plain stitching (largest gain); 4 modules → stitching with the last
+~1,500 tokens fresh (moderate gain); more → full prompt.
 
 ## Related work
 
