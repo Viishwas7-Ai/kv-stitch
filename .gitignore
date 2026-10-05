@@ -4,3 +4,7 @@ tiny/
 cache/
 compare_results.json
 .venv/
+venv/
+env/
+.DS_Store
+*.egg-info/
