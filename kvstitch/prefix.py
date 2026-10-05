@@ -87,6 +87,21 @@ class PrefixCache:
             total -= os.path.getsize(files[k])
             os.remove(files[k])
 
+    def drop_pinned_except(self, keep: set[str]) -> int:
+        """Delete pinned caches whose key is not in `keep` (an old version of a workflow).
+        Returns how many were removed."""
+        gone = 0
+        for k in [k for k, e in self.index.items() if e.get("pinned") and k not in keep]:
+            p = self._path(k)
+            if p and os.path.exists(p):
+                os.remove(p)
+            self.mem.pop(k, None)
+            del self.index[k]
+            gone += 1
+        if gone:
+            self._save_index()
+        return gone
+
     def disk_mb(self) -> float:
         if not self.dir:
             return 0.0

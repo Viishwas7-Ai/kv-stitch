@@ -160,14 +160,20 @@ class PlannerBackend:
 
     def add_workflows(self, model: str, workflows: list[Workflow],
                       build: Callable[[list[str]], tuple[str, list[Piece]]],
-                      progress: Callable[[str], None] | None = None) -> dict:
+                      progress: Callable[[str], None] | None = None, prune: bool = True) -> dict:
         """Warm and pin every workflow for `model` (first launch, or after the workflow file changed).
 
         build(module_names) -> (header, pieces): the app's own prompt builder for those modules,
         in that order, with is_module=True on the module pieces. Returns what was built.
+
+        Unchanged workflows are found in the cache and skipped; a workflow whose modules, rules
+        or model changed gets new keys and is rebuilt. With prune=True the old versions
+        (pinned caches that no current workflow uses) are deleted. Pruning is skipped if any
+        workflow failed to build, so a typo never wipes good caches.
         """
         self._load(model)
-        report = {"workflows": 0, "built": 0, "skipped": []}
+        report = {"workflows": 0, "built": 0, "skipped": [], "removed_old": 0}
+        keep: set[str] = set()
         for wf in workflows:
             if wf.model and wf.model != model:
                 continue
@@ -180,6 +186,7 @@ class PlannerBackend:
             combos = [names]                           # the whole prefix for exactly this workflow
             if module_idx and module_idx[-1] + 1 < len(names):
                 combos.append(names[: module_idx[-1] + 1])   # the start: up to its last module
+            keep.update(self._pc.key(c) for c in combos)
             t0 = time.perf_counter()
             n = self._pc.warm(combos, pin=True)
             report["built"] += n
@@ -188,6 +195,11 @@ class PlannerBackend:
                 progress(f"  {wf.name} ({', '.join(wf.modules)}): "
                          f"{'built ' + str(n) + ' cache(s)' if n else 'already cached'} "
                          f"in {time.perf_counter() - t0:.1f}s")
+        if prune and not report["skipped"]:
+            # anything pinned that is not a current workflow is an old version: remove it
+            report["removed_old"] = self._pc.drop_pinned_except(keep)
+            if progress and report["removed_old"]:
+                progress(f"  removed {report['removed_old']} old cache(s) of changed workflows")
         return report
 
     def stats(self) -> dict:

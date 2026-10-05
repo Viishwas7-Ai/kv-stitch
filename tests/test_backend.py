@@ -115,3 +115,18 @@ def test_workflow_exact_and_with_extras(be):
     assert r.path == "partial" and r.text == full_text(be, p)
     # pinned
     assert be.stats()["pinned"] >= 2
+
+
+def test_changed_workflow_rebuilds_and_old_is_removed(be):
+    from kvstitch import parse_workflows
+    build = build_factory()
+    r1 = be.add_workflows("tiny", parse_workflows("w: CREATE, NOTES"), build)
+    r2 = be.add_workflows("tiny", parse_workflows("w: CREATE, NOTES"), build)
+    assert r1["built"] == 2 and r2["built"] == 0 and r2["removed_old"] == 0   # unchanged: nothing to do
+    # the module text changes (e.g. a module was edited): only that workflow is rebuilt
+    def build2(mods):
+        h, p = build(mods)
+        return h, [(n, t + "Edited.\n" if n == "notes" else t, *rest) for n, t, *rest in p]
+    r3 = be.add_workflows("tiny", parse_workflows("w: CREATE, NOTES"), build2)
+    assert r3["built"] >= 1 and r3["removed_old"] >= 1
+    assert be.stats()["pinned"] == 2
