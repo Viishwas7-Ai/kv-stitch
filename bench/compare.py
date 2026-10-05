@@ -62,3 +62,4 @@ for r in refreshes:
           f"median {stats.median(stitch_t[r]):.2f}s")
 json.dump(rows, open(a.out, "w"), indent=1)
 print("details ->", a.out)
+st.close()

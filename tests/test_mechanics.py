@@ -27,7 +27,8 @@ def st():
     s.set_header(HEADER)
     for k, v in MODS.items():
         s.add_module(k, v)
-    return s
+    yield s
+    s.close()
 
 
 def diff(a, b):
@@ -81,10 +82,9 @@ def test_order_changes_positions(st):
 def test_disk_roundtrip(st, tmp_path):
     a, _ = st.run(["CREATE", "ZIP"], TAIL, max_tokens=16)
     st.save_dir(tmp_path)
-    s2 = Stitcher.__new__(Stitcher)
-    s2.__dict__.update(st.__dict__)
-    s2.load_dir(tmp_path)
-    b, _ = s2.run(["CREATE", "ZIP"], TAIL, max_tokens=16)
+    st.header, st.modules = None, {}
+    st.load_dir(tmp_path)
+    b, _ = st.run(["CREATE", "ZIP"], TAIL, max_tokens=16)
     assert a == b
 
 

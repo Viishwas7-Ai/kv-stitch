@@ -14,6 +14,7 @@ the first to soften the joins.
 """
 from __future__ import annotations
 
+import atexit
 import ctypes
 import hashlib
 import os
@@ -56,6 +57,10 @@ class Stitcher:
         self.ctx = lc.llama_init_from_model(self.llm._model.model, p)
         if not self.ctx:
             raise RuntimeError("could not create llama context")
+        # Llama made its own context (and KV cache) we never use; free it now so an
+        # 8 GB machine doesn't hold two caches. Tokenizing only needs the model.
+        self.llm._ctx.close()
+        atexit.register(self.close)   # Metal asserts at exit if a context is still alive
         self.mem = lc.llama_get_memory(self.ctx)
         self.vocab = lc.llama_model_get_vocab(self.llm._model.model)
         self.n_vocab = lc.llama_vocab_n_tokens(self.vocab)
@@ -106,6 +111,15 @@ class Stitcher:
 
     def clear(self):
         lc.llama_memory_clear(self.mem, True)
+
+    def close(self):
+        """Free the context and model. Safe to call more than once."""
+        if getattr(self, "ctx", None):
+            lc.llama_free(self.ctx)
+            self.ctx = None
+        if getattr(self, "llm", None) is not None:
+            self.llm.close()
+            self.llm = None
 
     # ---------- precompute ----------
     def set_header(self, text: str):
