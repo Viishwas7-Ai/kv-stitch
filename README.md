@@ -49,7 +49,7 @@ print(text, t)                             # t: load / tail / generation seconds
 
 ```bash
 pip install llama-cpp-python            # on Apple Silicon this builds with Metal
-python bench/compare.py model.gguf cases.json --refresh 0,16,32
+python bench/compare.py model.gguf cases.json --chat --variants r0,f1500,m1,m2,mall
 ```
 
 `cases.json` holds the header, the modules, and a list of requests (module names + tail). It runs every case with the **full prompt** and the **stitched prompt** using greedy decoding, then reports how many outputs are identical and the time each took.
@@ -111,8 +111,36 @@ remaining prompt time.
 each other.) Larger refresh alone does not recover the hardest case (a 4-step chain where later steps depend
 on earlier ones); computing the last ~1,500 module tokens fresh does, at a much smaller speedup.
 
-**Practical rule so far:** 2–3 modules → plain stitching (largest gain); 4 modules → stitching with the last
-~1,500 tokens fresh (moderate gain); more → full prompt.
+**2–3 module prompts, 8 cases** (same model and setup). Here the prompt layout matters: after the tool
+modules come fixed pieces (a ~600-token terminal-tool section, then OS context), then the rules and the
+command. `fN` spends its fresh budget on those fixed pieces first, so a second family of variants picks
+fresh pieces **by type**: `m1` / `m2` = the last 1 / 2 tool modules fresh, `mall` = every tool module fresh,
+fixed pieces always loaded from the cache.
+
+| Variant | Same actions | Correct plans (manual check) | Prompt read | Total |
+|---|---|---|---|---|
+| full prompt | – | – | 21.5–22.4 s | 33.9–34.4 s |
+| r0 | 5/8 | ~4/8 | 4.9 s | 16.3 s |
+| f800 | 5/8 | ~4/8 | 5.8 s | 17.0 s |
+| f1500 | 6/8 | 5/8 | 13.3 s | 24.1 s |
+| **m1** | 6/8 | 5/8 (+1 partial) | **9.2 s** | **22.7 s** |
+| m2 | 7/8 | 5/8 (+2 partial) | 11.6 s | 22.9 s |
+| mall | 7/8 | 5/8 (+2 partial) | 13.5 s | 25.3 s |
+
+"Correct" means the plan would do what was asked; "partial" means the right steps with a wrong or
+missing parameter.
+
+- Making the **tool modules** fresh (`m*`) fixed cases that every token-count variant failed (a
+  note + reminder request where the reminder step was merged into the note).
+- One 4-step chain (find latest files → clean names → find the right folder → move) failed in **every**
+  variant, including `mall`, where all tool modules are fresh and only the header, terminal section and OS
+  context are cached. Each time the plan switched to shell commands. A fixed section that is stitched
+  **after** the tool modules was computed without seeing them, and it pulled the model toward that tool.
+
+**Practical conclusion so far:** on real tool-calling prompts, stitching modules saves about a third of the
+total time at a measurable accuracy cost, so it is not yet safe as a default without training. The exact
+alternative is to move fixed text **in front of** the variable modules, so it becomes a plain prefix cache:
+no approximation at all, and runtimes such as Ollama already reuse a matching prefix automatically.
 
 ## Related work
 
@@ -123,5 +151,7 @@ documents on server GPUs; this project looks at tool-doc modules for a small mod
 
 ## Status
 
-Prototype. The cache plumbing is tested (exactness tests above). Accuracy on real prompts is good for few
-modules and degrades with many. Next: adaptive cutoff, fresh-back and larger refresh, stitch-aware training.
+Prototype. The cache plumbing is tested (exactness tests above). On real tool-calling prompts, naive
+stitching is fast but loses steps; type-aware fresh pieces (`m1`/`m2`) recover most of the accuracy for
+about a third of the time saved. Next: put fixed text first as an exact prefix, and stitch-aware training
+(Block-Attention style) so stitched prompts keep full accuracy.
