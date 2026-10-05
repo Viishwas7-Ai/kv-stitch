@@ -142,6 +142,29 @@ total time at a measurable accuracy cost, so it is not yet safe as a default wit
 alternative is to move fixed text **in front of** the variable modules, so it becomes a plain prefix cache:
 no approximation at all, and runtimes such as Ollama already reuse a matching prefix automatically.
 
+### Exact prefix cache (`PrefixCache`, variant `p`)
+
+When everything before the user's request is the same text (same header, same modules, same rules), its KV
+cache is the same every time. `PrefixCache` computes that whole prefix **once, together**, keeps it (memory
+LRU and disk), and afterwards decodes only the request. Nothing is stitched, so nothing is approximated.
+
+| Model | Prompts | Prompt read: full → `p` (warm) | Total: full → `p` | Identical output |
+|---|---|---|---|---|
+| granite3.1-moe 3B | 23 one-module prompts (~0.9–1.6k tokens) | 2.12 s → **0.68 s** | 3.73 s → **2.38 s** | **23/23** |
+| granite-4.0-micro | 8 two/three-module prompts (~2.2–3.9k tokens) | 22.0 s → **4.9 s** | 35.7 s → **15.9 s** | **8/8** |
+
+It reproduced the full prompt's output character for character, including its mistakes. Most of the
+remaining prompt time with `p` is copying the saved cache into the context, not reading the request.
+
+The cache only helps when a combination repeats, so it is built for that:
+- `warm(combos)` builds a core set up front (for example on first launch) and pins it;
+- `save_after=N` writes a new combination to disk only once it has been used N times;
+- `max_disk_mb` evicts the least recently used, unpinned entries;
+- the key covers the model file, the context size and the exact tokens, so a changed module, rule or model
+  never reuses a stale cache.
+
+Anything per user or per day (a username, today's date) should sit after the cached part, next to the request.
+
 ## Related work
 
 Prompt Cache (Gim et al., 2023), EPIC (recompute the first tokens of each chunk), CacheBlend (selective
@@ -153,5 +176,6 @@ documents on server GPUs; this project looks at tool-doc modules for a small mod
 
 Prototype. The cache plumbing is tested (exactness tests above). On real tool-calling prompts, naive
 stitching is fast but loses steps; type-aware fresh pieces (`m1`/`m2`) recover most of the accuracy for
-about a third of the time saved. Next: put fixed text first as an exact prefix, and stitch-aware training
-(Block-Attention style) so stitched prompts keep full accuracy.
+about a third of the time saved. The exact prefix cache keeps the full prompt's output for repeated
+combinations (2.2× faster end to end on the larger model). Next: a prefix tree so combinations that share a
+start reuse the shared part exactly, cheaper cache loading, and stitch-aware training for stitching itself.
