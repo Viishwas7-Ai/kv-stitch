@@ -1,0 +1,100 @@
+{
+ "header": "You are a command compiler. Convert the user's command into a JSON plan using ONLY the actions documented below.\nReply with one JSON object: {\"plan\": [{\"action\": ..., \"params\": {...}}]}. No other text.\n\n### ACTIONS ###\n",
+ "modules": {
+  "FOLDERS": "CreateFolder: make folders. params: folder_name (string or list), path (parent folder, default ~/Desktop).\n  example: {\"action\": \"CreateFolder\", \"params\": {\"folder_name\": \"Work\", \"path\": \"~/Desktop\"}}\n  rule: path is the PARENT folder; never put the new folder name at the end of path.\n",
+  "FILES": "CreateFile: make an empty file. params: filename, path.\nWriteToFile: write text into a file. params: filename, text.\n  example: {\"action\": \"WriteToFile\", \"params\": {\"filename\": \"notes.txt\", \"text\": \"hello\"}}\nMoveFile: move a file or folder. params: source_path, destination_path.\nCopyFile: copy a file or folder. params: source_path, destination_path.\n",
+  "FIND": "FindFilesByExtension: find every file of one type in a folder. params: folder, extension.\n  Use it before acting on 'all the .png files'; the next step uses \"{files}\" as its source.\n",
+  "ZIP": "ZipAction: zip a folder or files, or unzip. params: target, output_name, mode (\"zip\" or \"unzip\").\n",
+  "NOTES": "NotesAction: Apple Notes. params: mode (create|append|read|list), title, text.\n  example: {\"action\": \"NotesAction\", \"params\": {\"mode\": \"create\", \"title\": \"Ideas\", \"text\": \"\"}}\n",
+  "REMINDER": "ReminderAction: set a reminder. params: task (no time words), date (today|tomorrow|weekday|day/month), time (like 5pm).\n  To LIST reminders send empty params {}.\n",
+  "APPS": "OpenApp: open an app or a file/folder. params: app_name or file_path.\nCloseApp: quit an app. params: app_name.\n",
+  "SYSTEM": "MacOSactions: system settings. params: operation (darkmode_on|darkmode_off|dnd_on|dnd_off|lock_screen|battery_status).\n",
+  "WEB": "WebAction: web search. params: query; site only if the user named a site.\n"
+ },
+ "cases": [
+  {
+   "modules": [
+    "FOLDERS"
+   ],
+   "tail": "\n### USER COMMAND ###\ncreate a folder named Reports on my desktop\n\n### JSON PLAN ###\n"
+  },
+  {
+   "modules": [
+    "FOLDERS",
+    "FILES"
+   ],
+   "tail": "\n### USER COMMAND ###\nmake a folder Demo on the desktop and a file todo.txt inside it with the text buy milk\n\n### JSON PLAN ###\n"
+  },
+  {
+   "modules": [
+    "FOLDERS",
+    "FIND",
+    "FILES"
+   ],
+   "tail": "\n### USER COMMAND ###\ncreate a folder called pics and move all the .png files from desktop into it\n\n### JSON PLAN ###\n"
+  },
+  {
+   "modules": [
+    "FOLDERS",
+    "ZIP"
+   ],
+   "tail": "\n### USER COMMAND ###\nmake a folder Backup on the desktop and zip it\n\n### JSON PLAN ###\n"
+  },
+  {
+   "modules": [
+    "NOTES"
+   ],
+   "tail": "\n### USER COMMAND ###\nnote this down: call the bank tomorrow\n\n### JSON PLAN ###\n"
+  },
+  {
+   "modules": [
+    "WEB",
+    "NOTES"
+   ],
+   "tail": "\n### USER COMMAND ###\nsearch the latest AI news and save it in a note called AI News\n\n### JSON PLAN ###\n"
+  },
+  {
+   "modules": [
+    "REMINDER"
+   ],
+   "tail": "\n### USER COMMAND ###\nremind me tomorrow at 9am to submit the assignment\n\n### JSON PLAN ###\n"
+  },
+  {
+   "modules": [
+    "NOTES",
+    "REMINDER"
+   ],
+   "tail": "\n### USER COMMAND ###\ncreate a note Shopping with eggs and milk and remind me at 6pm to go shopping\n\n### JSON PLAN ###\n"
+  },
+  {
+   "modules": [
+    "APPS",
+    "SYSTEM"
+   ],
+   "tail": "\n### USER COMMAND ###\nopen Spotify and turn on dark mode\n\n### JSON PLAN ###\n"
+  },
+  {
+   "modules": [
+    "FOLDERS",
+    "FILES",
+    "APPS"
+   ],
+   "tail": "\n### USER COMMAND ###\ncreate folder Site on desktop, make index.html inside it, then open the folder\n\n### JSON PLAN ###\n"
+  },
+  {
+   "modules": [
+    "FIND",
+    "ZIP"
+   ],
+   "tail": "\n### USER COMMAND ###\nfind all the .pdf files in Downloads and zip them\n\n### JSON PLAN ###\n"
+  },
+  {
+   "modules": [
+    "SYSTEM",
+    "REMINDER",
+    "NOTES"
+   ],
+   "tail": "\n### USER COMMAND ###\nturn on do not disturb, make a note called Focus and remind me in the evening at 8pm to stop\n\n### JSON PLAN ###\n"
+  }
+ ]
+}
