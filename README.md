@@ -92,6 +92,22 @@ res.text, res.path   # path: full | partial | miss | fast | fallback
 be.warm("granite3.1-moe:3b", header, [[glue, module] for module in core_modules])
 ```
 
+**Workflows.** List the module sequences people use in a file and warm them on first launch:
+
+```
+# workflows.txt — name: modules in prompt order   [@model]
+search_note_remind: WEB, NOTES, REMINDER
+```
+```python
+from kvstitch import load_workflows
+be.add_workflows(model, load_workflows("workflows.txt"), build=lambda mods: my_builder(mods))
+```
+Each workflow pins two caches: the full prefix (an exact match is the fastest path) and its start up to
+the last module (the same workflow followed by extra modules reuses it, exactly). The app's builder makes
+the pieces, so its own conditions (optional sections, filtered rules, lines that depend on other modules)
+are part of what is cached. `bench/workflow_check.py` warms a workflow file and checks test commands
+against the full prompt.
+
 Paths, cheapest first: **full** (whole prefix cached, exact) → **partial** (longest cached start loaded,
 the rest computed: exact) → **fast** (only if enabled and few modules: stitched, approximate) → **miss**
 (computed and remembered, exact) → **fallback** (the app's own call). Check a cases file end to end with

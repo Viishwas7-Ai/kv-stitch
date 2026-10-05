@@ -34,6 +34,7 @@ from typing import Callable
 
 from .core import Stitcher
 from .prefix import PrefixCache
+from .workflows import Workflow
 
 log = logging.getLogger("kvstitch.backend")
 
@@ -128,7 +129,9 @@ class PlannerBackend:
             self._load(model)
             names, module_idx = self._prepare(header, pieces)
             tail_full = tail + self._wrap[1]
-            first_module_end = (module_idx[0] + 1,) if module_idx else ()
+            # save the start after each module on the way, so later requests that share any
+            # leading run of modules (a workflow + extras, or a new mix) can reuse it
+            first_module_end = tuple(i + 1 for i in module_idx[:2])
             use_fast = self.fast_mode if fast is None else fast
             if (use_fast and not self._pc.has(names) and module_idx
                     and len(module_idx) <= self.fast_max_modules):
@@ -154,6 +157,31 @@ class PlannerBackend:
         self._load(model)
         combos = [self._prepare(header, pl)[0] for pl in piece_lists]
         return self._pc.warm(combos, pin=True)
+
+    def add_workflows(self, model: str, workflows: list[Workflow],
+                      build: Callable[[list[str]], tuple[str, list[Piece]]]) -> dict:
+        """Warm and pin every workflow for `model` (first launch, or after the workflow file changed).
+
+        build(module_names) -> (header, pieces): the app's own prompt builder for those modules,
+        in that order, with is_module=True on the module pieces. Returns what was built.
+        """
+        self._load(model)
+        report = {"workflows": 0, "built": 0, "skipped": []}
+        for wf in workflows:
+            if wf.model and wf.model != model:
+                continue
+            try:
+                header, pieces = build(list(wf.modules))
+            except Exception as e:                    # an unknown module name, etc.
+                report["skipped"].append(f"{wf.name}: {e}")
+                continue
+            names, module_idx = self._prepare(header, pieces)
+            combos = [names]                           # the whole prefix for exactly this workflow
+            if module_idx and module_idx[-1] + 1 < len(names):
+                combos.append(names[: module_idx[-1] + 1])   # the start: up to its last module
+            report["built"] += self._pc.warm(combos, pin=True)
+            report["workflows"] += 1
+        return report
 
     def stats(self) -> dict:
         if not self._pc:

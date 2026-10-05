@@ -1,0 +1,5 @@
+# name: modules in prompt order        [@model limits it to one model]
+search_and_note:      WEB, NOTES
+search_note_remind:   WEB, NOTES, REMINDER
+new_project:          FILES, CODE
+cleanup:              SYSTEM, SUGGEST     @small-model

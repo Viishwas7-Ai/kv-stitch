@@ -78,3 +78,40 @@ def test_fallback(tmp_path):
     b = PlannerBackend({"tiny": "/does/not/exist.gguf"}, str(tmp_path), fallback=fb)
     r = b.plan("tiny", HEADER, [GLUE, CREATE], TAIL)
     assert r.path == "fallback" and r.text == '{"plan": []}' and TAIL in seen["prompt"]
+
+
+def build_factory():
+    table = {"CREATE": CREATE, "NOTES": NOTES, "ZIP": ZIP}
+    def build(mods):
+        return HEADER, [GLUE] + [table[m] for m in mods] + [OS_]
+    return build
+
+
+def test_parse_workflows():
+    from kvstitch import parse_workflows
+    wfs = parse_workflows("""
+        # comment
+        make_and_note: CREATE, NOTES
+        zip_only: ZIP   @tiny   # trailing comment
+    """)
+    assert [(w.name, w.modules, w.model) for w in wfs] == [
+        ("make_and_note", ["CREATE", "NOTES"], None), ("zip_only", ["ZIP"], "tiny")]
+    with pytest.raises(ValueError):
+        parse_workflows("bad line without colon")
+
+
+def test_workflow_exact_and_with_extras(be):
+    from kvstitch import parse_workflows
+    build = build_factory()
+    rep = be.add_workflows("tiny", parse_workflows("make_and_note: CREATE, NOTES\nother: ZIP @nope"), build)
+    assert rep["workflows"] == 1 and rep["built"] == 2
+    # exactly the workflow -> whole prefix cached
+    h, p = build(["CREATE", "NOTES"])
+    r = be.plan("tiny", h, p, TAIL)
+    assert r.path == "full" and r.text == full_text(be, p)
+    # workflow + an extra module after it -> its start is reused, exactly
+    h, p = build(["CREATE", "NOTES", "ZIP"])
+    r = be.plan("tiny", h, p, TAIL)
+    assert r.path == "partial" and r.text == full_text(be, p)
+    # pinned
+    assert be.stats()["pinned"] >= 2
