@@ -1,0 +1,6 @@
+__pycache__/
+*.gguf
+tiny/
+cache/
+compare_results.json
+.venv/

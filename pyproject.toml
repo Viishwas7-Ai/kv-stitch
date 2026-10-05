@@ -1,0 +1,9 @@
+[project]
+name = "kv-stitch"
+version = "0.1.0"
+description = "Modular prompt KV-cache stitching for llama.cpp"
+requires-python = ">=3.9"
+dependencies = ["llama-cpp-python>=0.3.36"]
+
+[tool.setuptools]
+packages = ["kvstitch"]
