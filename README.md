@@ -209,6 +209,16 @@ The cache only helps when a combination repeats, so it is built for that:
 
 Anything per user or per day (a username, today's date) should sit after the cached part, next to the request.
 
+**Workflows end to end** (granite-4.0-micro, 10 common workflows warmed and pinned, 10 test commands):
+
+| Test commands | Path taken | Identical to full prompt |
+|---|---|---|
+| 6 exactly a workflow | `full` | 6/6 |
+| 3 a workflow plus one extra module | `partial` (workflow start reused) | 3/3 |
+| 1 not a workflow | `miss` | 1/1 |
+
+Median per command **44.8 s → 19.2 s** (2.3×). Cache on disk: 3.5 GB for 26 entries.
+
 ## Related work
 
 Prompt Cache (Gim et al., 2023), EPIC (recompute the first tokens of each chunk), CacheBlend (selective
