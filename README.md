@@ -41,7 +41,7 @@ for name, text in MODULES.items():
     st.add_module(name, text)              # once per module
 st.save_dir("cache/")                      # reuse across restarts with st.load_dir
 
-text, t = st.run(["CREATE", "NOTES"], tail="### User Command ###\n...\n### Your JSON Plan ###\n")
+text, t = st.run(["tool_a", "tool_b"], tail="### User Command ###\n...\n### Your JSON Plan ###\n")
 print(text, t)                             # t: load / tail / generation seconds
 ```
 
@@ -64,10 +64,48 @@ KVSTITCH_MODEL=tiny/tiny.gguf pytest -q -s tests
 
 These tests check the cache plumbing on a tiny random model:
 - header + one module gives **exactly** the same result as the full prompt
-- shifting a module by d positions gives **exactly** the same result as computing it d positions later
+- shifting a module forward and back restores the exact result, and a one-way shift really changes it
+- computing every module fresh (`fresh` larger than the modules) gives **exactly** the full-prompt output
 - saving and reloading the cache from disk gives the same output
 - the multi-module difference is printed for information (it is approximate by design)
 
+## Results
+
+**Setup:** MacBook Air M3, 8 GB RAM, `granite-4.0-micro` (Q4, 3B), llama-cpp-python with Metal, greedy decoding,
+the model's chat template (`--chat`). Prompts are a real **JSON tool-calling** prompt: a fixed header, tool-doc
+modules picked per request, OS context and rules, then the user command. The model must answer with a JSON plan
+of tool calls. "Same actions" means the stitched plan calls the same tools in the same order as the full prompt.
+
+| Modules per prompt | Prompt size | Cases | Prompt read: full → stitched | Total: full → stitched | Same actions |
+|---|---|---|---|---|---|
+| 2–3 | ~1.5–1.9k tokens | 6 | 7.3 s → **0.65 s (11×)** | 12.7 s → **5.9 s** | **6/6** |
+| 4 | ~3.6–4.7k tokens | 3 | 21.2 s → **7.1 s (3×)** | 30.5 s → **15.9 s** | 2/3 |
+| 7 | ~4.8–5.8k tokens | 3 | 30.0 s → **7.4 s (4×)** | 41.9 s → **14.3 s** | 1/3 |
+
+In the 4- and 7-module runs the rules section (~1k tokens) is still computed fresh, which is most of the
+remaining prompt time.
+
+**What this shows**
+- **Speed:** reading the prompt gets 3–11× faster. Total time roughly halves; writing the answer is now the
+  biggest cost.
+- **Accuracy depends on how many modules are joined.** With 2–3 modules the plans keep the same tool calls
+  (differences are small wording changes in parameters). With 7 modules the model starts **dropping steps**.
+  Each module never saw the others, and the error grows with the number of joins, which matches the literature.
+- **Refresh** (recompute the first N tokens of each join, the EPIC idea) fixed a generic 12-case test
+  (4/12 → 11/12 identical) but did not rescue the 7-module prompts at 16–32 tokens.
+- **Caching the rules as many small pieces** made accuracy worse: every extra join costs a little.
+
+**Practical rule so far:** stitch when a request needs few modules, use the full prompt for the largest ones.
+Larger refresh values and computing the last modules fresh (`--variants r128,f1500,...`) are being measured next.
+
+## Related work
+
+Prompt Cache (Gim et al., 2023), EPIC (recompute the first tokens of each chunk), CacheBlend (selective
+recompute of the most affected ~15% of tokens), KVLink and Block-Attention (train the model to read
+independently encoded blocks), APE (training-free attention adjustment). Most of this work targets RAG
+documents on server GPUs; this project looks at tool-doc modules for a small model on an 8 GB laptop.
+
 ## Status
 
-Early prototype. The plumbing is tested; accuracy and speed on real models still need to be measured with `bench/compare.py`.
+Prototype. The cache plumbing is tested (exactness tests above). Accuracy on real prompts is good for few
+modules and degrades with many. Next: adaptive cutoff, fresh-back and larger refresh, stitch-aware training.
