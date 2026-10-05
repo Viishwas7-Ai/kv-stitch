@@ -140,46 +140,85 @@ class PrefixCache:
         p = self._path(k)
         return k in self.mem or bool(p and os.path.exists(p))
 
-    def load_prefix(self, names: list[str]) -> tuple[int, bool]:
-        """Put the prefix for `names` into the context. Returns (next position, was_cached)."""
-        k = self.key(names)
-        st = self.st
-        st.clear()
-        e = self._touch(k)
-        p = self._path(k)
-        on_disk = bool(p and os.path.exists(p))
+    def _read(self, k: str) -> tuple[bytes, int] | None:
         if k in self.mem:
-            state, n = self.mem[k]
             self.mem.move_to_end(k)
-            st._load(state, MAIN)
-            if not on_disk and e["uses"] >= self.save_after:
-                self._write(k, state, n)               # it became a pattern: keep it
-            self._save_index()
-            return n, True
-        if on_disk:
+            return self.mem[k]
+        p = self._path(k)
+        if p and os.path.exists(p):
             with open(p, "rb") as f:
                 n = int.from_bytes(f.read(4), "little")
                 state = f.read()
-            st._load(state, MAIN)
             self._remember(k, state, n)
+            self._touch(k, used=False)
+            return state, n
+        return None
+
+    def load_prefix(self, names: list[str], checkpoints: tuple[int, ...] = ()) -> tuple[int, str]:
+        """Put the prefix for `names` into the context. Returns (next position, kind).
+
+        kind: "full"    the whole prefix was cached
+              "partial" the longest cached start was loaded and only the rest computed
+              "miss"    nothing cached, computed from the start
+        Every path gives exactly the full prompt's cache: a start is only ever reused when it
+        was computed with exactly the same tokens before it.
+
+        checkpoints: piece counts (e.g. "up to and including the first module") whose state
+        is saved on the way, so later requests that share that start can reuse it.
+        """
+        st = self.st
+        st.clear()
+        kfull = self.key(names)
+        e = self._touch(kfull)
+        got = self._read(kfull)
+        if got:
+            state, n = got
+            st._load(state, MAIN)
+            p = self._path(kfull)
+            if p and not os.path.exists(p) and e["uses"] >= self.save_after:
+                self._write(kfull, state, n)           # it became a pattern: keep it
             self._save_index()
-            return n, True
-        toks = self._tokens(names)                     # first time: compute it once, exactly
-        st._decode(toks, 0, MAIN)
+            return n, "full"
+
+        start, pos, kind = 0, 0, "miss"
+        for L in range(len(names) - 1, 0, -1):         # longest cached start
+            g = self._read(self.key(names[:L]))
+            if g:
+                st._load(g[0], MAIN)
+                start, pos, kind = L, g[1], "partial"
+                break
+        if start == 0:
+            ht = self.st.header.tokens
+            st._decode(ht, 0, MAIN)
+            pos = len(ht)
+        for i in range(start, len(names)):             # compute the rest, saving checkpoints
+            t = self.st.modules[names[i]].tokens
+            st._decode(t, pos, MAIN)
+            pos += len(t)
+            c = i + 1
+            if c in checkpoints and c < len(names):
+                kc = self.key(names[:c])
+                p = self._path(kc)
+                if kc not in self.mem and not (p and os.path.exists(p)):
+                    cstate = st._save(MAIN)
+                    self._remember(kc, cstate, pos)
+                    self._touch(kc, used=False)
+                    self._write(kc, cstate, pos)
         state = st._save(MAIN)
-        self._remember(k, state, len(toks))
+        self._remember(kfull, state, pos)
         if e["uses"] >= self.save_after:
-            self._write(k, state, len(toks))
+            self._write(kfull, state, pos)
         self._save_index()
-        return len(toks), False
+        return pos, kind
 
     def run(self, names: list[str], tail: str, max_tokens: int = 512,
-            stop: list[str] | None = None) -> tuple[str, Timing]:
+            stop: list[str] | None = None, checkpoints: tuple[int, ...] = ()) -> tuple[str, Timing]:
         tm = Timing()
         t0 = time.perf_counter()
-        pos, hit = self.load_prefix(names)
+        pos, kind = self.load_prefix(names, checkpoints)
         tm.load_s = time.perf_counter() - t0
-        tm.extra["prefix_hit"] = hit
+        tm.extra["prefix_hit"] = kind == "full"
+        tm.extra["prefix_kind"] = kind
         tt = self.st.tok(tail)
         t0 = time.perf_counter()
         logits = self.st._decode(tt, pos, MAIN, want_last=True)

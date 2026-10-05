@@ -69,6 +69,34 @@ These tests check the cache plumbing on a tiny random model:
 - saving and reloading the cache from disk gives the same output
 - the multi-module difference is printed for information (it is approximate by design)
 
+## Using it in an app: `PlannerBackend`
+
+```python
+from kvstitch import PlannerBackend
+
+be = PlannerBackend(
+    {"granite3.1-moe:3b": moe_gguf_path, "granite4:micro": micro_gguf_path},
+    cache_root="~/Library/Application Support/MyApp/kvcache",
+    save_after=2,            # a module combination becomes a cached pattern on its 2nd use
+    max_disk_mb=3000,        # least recently used, unpinned caches are evicted past this
+    fast_mode=False,         # opt-in stitching for uncached prompts (approximate)
+    fast_max_modules=3,
+    fallback=lambda model, prompt: call_ollama(model, prompt),   # used if anything fails
+)
+
+# pieces in prompt order: (name, text, is_module). Per-user / per-day text goes in the tail.
+res = be.plan("granite4:micro", header, pieces, tail)
+res.text, res.path   # path: full | partial | miss | fast | fallback
+
+# first launch: build and pin "everything up to the first module" for the core modules
+be.warm("granite3.1-moe:3b", header, [[glue, module] for module in core_modules])
+```
+
+Paths, cheapest first: **full** (whole prefix cached, exact) → **partial** (longest cached start loaded,
+the rest computed: exact) → **fast** (only if enabled and few modules: stitched, approximate) → **miss**
+(computed and remembered, exact) → **fallback** (the app's own call). Check a cases file end to end with
+`bench/backend_check.py`.
+
 ## Results
 
 **Setup:** MacBook with Apple M3, 8 GB RAM, `granite-4.0-micro` (Q4, 3B), llama-cpp-python with Metal, greedy decoding,

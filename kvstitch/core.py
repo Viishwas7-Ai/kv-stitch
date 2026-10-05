@@ -30,8 +30,9 @@ TMP = 1    # scratch sequence used while loading a module
 @dataclass
 class Block:
     tokens: list[int]
-    state: bytes          # llama_state_seq_get_data blob (cells for this block only)
+    state: bytes | None   # llama_state_seq_get_data blob (cells for this block only); None = not built yet
     start: int            # position its first token was computed at
+    text: str = ""        # kept so a lazily registered block can be built when stitching needs it
 
 
 @dataclass
@@ -159,7 +160,19 @@ class Stitcher:
         self._load(self.header.state, MAIN)
         self._decode(toks, h, MAIN)
         lc.llama_memory_seq_rm(self.mem, MAIN, 0, h)      # drop header cells
-        self.modules[name] = Block(toks, self._save(MAIN), h)
+        self.modules[name] = Block(toks, self._save(MAIN), h, text)
+
+    def register(self, name: str, text: str):
+        """Tokenize only. Enough for the exact prefix cache; the stitching state is built
+        on first use (ensure_state), so pieces that are never stitched cost nothing."""
+        assert self.header, "set_header first"
+        if name not in self.modules:
+            self.modules[name] = Block(self.tok(text), None, len(self.header.tokens), text)
+
+    def ensure_state(self, name: str):
+        b = self.modules[name]
+        if b.state is None:
+            self.add_module(name, b.text)
 
     # ---------- per request ----------
     def assemble(self, names: list[str], refresh: int = 0,
@@ -181,6 +194,8 @@ class Stitcher:
                 toks += b.tokens
                 pos += n
                 continue
+            self.ensure_state(name)
+            b = self.modules[name]
             # refresh: the first r tokens are decoded fresh, so they see every module
             # before them (the first module already saw exactly the header). llama.cpp
             # only accepts new tokens after the last position, so do this before the copy.
