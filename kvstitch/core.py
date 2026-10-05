@@ -105,7 +105,7 @@ class Stitcher:
         n = lc.llama_state_seq_get_size(self.ctx, seq)
         buf = (ctypes.c_uint8 * n)()
         w = lc.llama_state_seq_get_data(self.ctx, buf, n, seq)
-        return bytes(buf[:w])
+        return ctypes.string_at(buf, w)   # bytes(buf[:w]) builds a Python list first: ~60x slower
 
     def _load(self, blob: bytes, seq: int):
         buf = (ctypes.c_uint8 * len(blob)).from_buffer_copy(blob)
