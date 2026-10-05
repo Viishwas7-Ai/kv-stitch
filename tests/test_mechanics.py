@@ -139,3 +139,22 @@ def test_prefix_cache_is_exact(st, tmp_path):
     disk, t3 = pc.run(names, TAIL, max_tokens=12)
     assert t3.extra["prefix_hit"]
     assert full == cold == warm == disk
+
+
+def test_prefix_cache_learns_and_evicts(st, tmp_path):
+    from kvstitch import PrefixCache
+    a, b, c = ["CREATE"], ["NOTES"], ["ZIP"]
+    pc = PrefixCache(st, cache_dir=str(tmp_path), max_in_memory=0, save_after=2)
+    pc.run(a, TAIL, max_tokens=2)
+    assert not pc.has(a)                     # used once: not a pattern yet
+    pc.run(a, TAIL, max_tokens=2)
+    assert pc.has(a)                         # used twice: saved
+    one = pc.disk_mb()
+    # pinned core set survives eviction; unpinned old entries go first
+    pc2 = PrefixCache(st, cache_dir=str(tmp_path), max_in_memory=0, save_after=1,
+                      max_disk_mb=one * 2.5)
+    assert pc2.warm([b]) == 1 and pc2.has(b)
+    pc2.run(c, TAIL, max_tokens=2)
+    pc2.run(["CREATE", "NOTES"], TAIL, max_tokens=2)
+    assert pc2.has(b)                        # pinned
+    assert pc2.disk_mb() <= one * 2.5 + 1e-6
