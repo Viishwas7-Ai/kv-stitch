@@ -94,6 +94,7 @@ pc = be._pc
 kinds = ["start"] + [f"r{r}" for r in refresh]
 score = {k: {"text": 0, "json": 0, "actions": 0, "DIFF": 0} for k in kinds}
 times = {k: [] for k in ["no-cache"] + kinds}
+gen_tokens = []
 
 
 def forget(names):
@@ -115,9 +116,10 @@ for i, (mods, cmd) in enumerate(tests, 1):
     row = {}
 
     t0 = time.perf_counter()
-    ref, _ = be._st.run_full(names, tail_full, a.max_tokens)
+    ref, rtm = be._st.run_full(names, tail_full, a.max_tokens)
     times["no-cache"].append(time.perf_counter() - t0)
-    row["no-cache"] = f"no-cache {times['no-cache'][-1]:.2f}s"
+    gen_tokens.append(rtm.gen_tokens)
+    row["no-cache"] = f"no-cache {times['no-cache'][-1]:.2f}s ({rtm.gen_tokens} tok written)"
     print(" no-cache", end="", flush=True)
     if a.show:
         print("\n  no-cache:", ref.strip().replace("\n", " "))
@@ -153,7 +155,8 @@ for i, (mods, cmd) in enumerate(tests, 1):
           + f"  — {cmd[:50]}", flush=True)
 
 n = len(tests)
-print(f"\n{n} tests, median no-cache {stats.median(times['no-cache']):.2f}s")
+print(f"\n{n} tests, median no-cache {stats.median(times['no-cache']):.2f}s, "
+      f"median {stats.median(gen_tokens):.0f} tokens written")
 for k in kinds:
     s = score[k]
     label = "exact start      " if k == "start" else f"fast refresh {k[1:]:>4}"
