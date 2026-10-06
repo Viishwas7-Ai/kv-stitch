@@ -2,6 +2,7 @@ __pycache__/
 *.gguf
 tiny/
 cache/
+cache_fast*/
 compare_results.json
 .venv/
 venv/
