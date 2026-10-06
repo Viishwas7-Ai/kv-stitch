@@ -1,0 +1,111 @@
+loading model ...
+first run (already cached ones are skipped):
+  building GLUE+CALENDAR ...
+  [1/1] GLUE+CALENDAR: built in 3.5s
+  building TEXT_RULE+GLUE+CLIPBOARD ...
+  [1/1] TEXT_RULE+GLUE+CLIPBOARD: built in 5.1s
+  building GLUE+CREATE ...
+  [1/1] GLUE+CREATE: built in 9.6s
+  building GLUE+DELETE ...
+  [1/1] GLUE+DELETE: built in 2.3s
+  building TEXT_RULE+GLUE+EMAIL ...
+  [1/1] TEXT_RULE+GLUE+EMAIL: built in 2.7s
+  building GLUE+EXTENSION ...
+  [1/1] GLUE+EXTENSION: built in 2.0s
+  building GLUE+FILES ...
+  [1/1] GLUE+FILES: built in 4.0s
+  building GLUE+LIST ...
+  [1/1] GLUE+LIST: built in 1.8s
+  building TEXT_RULE+GLUE+NOTES ...
+  [1/1] TEXT_RULE+GLUE+NOTES: built in 2.8s
+  building GLUE+OCR ...
+  [1/1] GLUE+OCR: built in 1.5s
+  building GLUE+OPENCLOSE ...
+  [1/1] GLUE+OPENCLOSE: built in 1.8s
+  building GLUE+PCCONTROL ...
+  [1/1] GLUE+PCCONTROL: built in 1.9s
+  building GLUE+READ ...
+  [1/1] GLUE+READ: built in 3.5s
+  building GLUE+RECALL ...
+  [1/1] GLUE+RECALL: built in 3.0s
+  building GLUE+RELEVANT ...
+  [1/1] GLUE+RELEVANT: built in 1.7s
+  building GLUE+REMINDER ...
+  [1/1] GLUE+REMINDER: built in 7.6s
+  building GLUE+RENAME ...
+  [1/1] GLUE+RENAME: built in 2.9s
+  building GLUE+SUGGEST ...
+  [1/1] GLUE+SUGGEST: built in 1.8s
+  building GLUE+SUMMARIZE ...
+  [1/1] GLUE+SUMMARIZE: built in 2.2s
+  building GLUE+WEB ...
+  [1/1] GLUE+WEB: built in 2.4s
+  building GLUE+ZIP ...
+  [1/1] GLUE+ZIP: built in 5.2s
+first run done in 69.3s
+
+  speed plan: {   "plan": [     {       "action": "WebAction",       "params": {         "query": "latest iPhone price"       }     },     {       "action": "NotesAction",       "params": {         "mode": "create",         "title": "iPhone Price",         "text": "{text}"       }     }   ] }
+[1/20] WEB+NOTES: no-cache 27.4s | partial 24.2s (4 pieces cached) same | speed:fast 26.1s same  — search the latest iphone price and save it in my n
+  plan: {   "plan": [     {       "action": "WebAction",       "params": {         "query": "latest iPhone price"       }     },     {       "action": "NotesAction",       "params": {         "mode": "create",         "title": "iPhone Price",         "text": "{text}"       }     }   ] }
+  speed plan: {   "plan": [     {       "action": "WebAction",       "params": {         "query": "latest news"       }     },     {       "action": "NotesAction",       "params": {         "mode": "create",         "title": "latest news",         "text": "{text}"       }     },     {       "action": "ReminderAction",       "params": {         "task": "{text}",         "date": "today",         "time": "5pm"       }     }   ] }
+[2/20] WEB+NOTES+REMINDER: no-cache 36.4s | partial 34.2s (5 pieces cached) same | speed:fast 34.0s same  — serach on web for latest new write into my notes a
+  plan: {   "plan": [     {       "action": "WebAction",       "params": {         "query": "latest news"       }     },     {       "action": "NotesAction",       "params": {         "mode": "create",         "title": "latest news",         "text": "{text}"       }     },     {       "action": "ReminderAction",       "params": {         "task": "{text}",         "date": "today",         "time": "5pm"       }     }   ] }
+  speed plan: {   "plan": [     {       "action": "WebAction",       "params": {         "query": "latest AI news"       }     },     {       "action": "NotesAction",       "params": {         "mode": "create",         "title": "AI News",         "text": "{text}"       }     },     {       "action": "CalendarAction",       "params": {         "task": "AI News",         "date": "tomorrow",         "time": "10am"       }     }   ] }
+[3/20] WEB+NOTES+CALENDAR: no-cache 31.4s | partial 25.9s (5 pieces cached) same | speed:fast 26.6s DIFF  — search the latest ai news, save it in a note and a
+  plan: {   "plan": [     {       "action": "WebAction",       "params": {         "query": "latest AI news"       }     },     {       "action": "NotesAction",       "params": {         "mode": "create",         "title": "AI News",         "text": "{text}"       }     },     {       "action": "CalendarAction",       "params": {         "task": "AI News",         "date": "tomorrow"       }     }   ] }
+  speed plan: {   "plan": [     {       "action": "WebAction",       "params": {         "query": "weather in Delhi"       }     },     {       "action": "EmailAction",       "params": {         "to": "vishwasmoond@gmail.com",         "subject": "Today's Weather in Delhi",         "body": "{text}"       }     }   ] }
+[4/20] WEB+EMAIL: no-cache 28.1s | partial 24.2s (4 pieces cached) same | speed:fast 18.9s DIFF  — find todays weather in delhi and email it to me
+  plan: {   "plan": [     {       "action": "WebAction",       "params": {         "query": "weather in Delhi"       }     },     {       "action": "EmailAction",       "params": {         "mode": "send",         "to": "vishwasmoond@gmail.com",         "subject": "Today's Weather in Delhi",         "body": "{text}"       }     }   ] }
+  speed plan: {   "plan": [     {       "action": "NotesAction",       "params": {         "mode": "create",         "title": "groceries",         "text": "milk and eggs"       }     },     {       "action": "ReminderAction",       "params": {         "task": "groceries",         "date": "today",         "time": "7pm"       }     }   ] }
+[5/20] NOTES+REMINDER: no-cache 31.7s | partial 27.8s (4 pieces cached) same | speed:fast 20.8s same  — make a note called groceries with milk and eggs an
+  plan: {   "plan": [     {       "action": "NotesAction",       "params": {         "mode": "create",         "title": "groceries",         "text": "milk and eggs"       }     },     {       "action": "ReminderAction",       "params": {         "task": "groceries",         "date": "today",         "time": "7pm"       }     }   ] }
+  speed plan: {   "plan": [     {       "action": "NotesAction",       "params": {         "mode": "append",         "title": "ideas",         "text": "{text}"       }     },     {       "action": "ClipboardAction",       "params": {         "mode": "write"       }     }   ] }
+[6/20] NOTES+CLIPBOARD: no-cache 25.5s | partial 20.9s (4 pieces cached) same | speed:fast 18.3s DIFF  — copy my note called ideas to clipboard
+  plan: {   "plan": [     {       "action": "NotesAction",       "params": {         "mode": "append",         "title": "ideas",         "text": "{text}"       }     },     {       "action": "ClipboardAction",       "params": {         "mode": "write",         "text": "{text}"       }     }   ] }
+  speed plan: {   "plan": [     {       "action": "Recall",       "params": {         "type": "download",         "sort": "latest",         "folder": "~/Downloads"       }     }   ] }
+[7/20] RECALL+RENAME: no-cache 29.6s | partial 19.7s (3 pieces cached) same | speed:fast 20.0s DIFF  — find the latest download and clean its name
+  plan: {   "plan": [     {       "action": "Recall",       "params": {         "type": "download",         "sort": "latest"       }     }   ] }
+  speed plan: {   "plan": [     {       "action": "Recall",       "params": {         "type": "pdf",         "sort": "latest",         "when": "2",         "folder": "~/Downloads"       }     },     {       "action": "Rename",       "params": {         "source_path": "{{files}}",         "clean": true       }     },     {       "action": "RelevantFile",       "params": {         "path": "{{files}}"       }     },     {       "action": "MoveFile",       "params": {         "source_path": "{{files}}",         "destination_path": "{{folder}}"       }     }   ] }
+[8/20] RECALL+RENAME+RELEVANT: no-cache 36.5s | partial 30.4s (4 pieces cached) same | speed:fast 28.3s DIFF  — ok so find the late 2 downloads then clean there n
+  plan: {   "plan": [     {       "action": "Recall",       "params": {         "type": "pdf",         "sort": "latest",         "when": "2",         "folder": "~/Downloads"       }     },     {       "action": "Rename",       "params": {         "source_path": "{{files}}",         "clean": true       }     },     {       "action": "RelevantFile",       "params": {}     },     {       "action": "MoveFile",       "params": {         "source_path": "{{files}}",         "destination_path": "{{folder}}"       }     }   ] }
+  speed plan: {   "plan": [     {       "action": "Recall",       "params": {         "type": "download",         "sort": "latest",         "limit": 3       }     },     {       "action": "Rename",       "params": {         "source_path": "{{files}}",         "clean": true       }     },     {       "action": "ZipAction",       "params": {         "target": "{{files}}",         "output_name": "downloads_backup.zip"       }     }   ] }
+[9/20] RECALL+RENAME+ZIP: no-cache 38.2s | partial 32.6s (4 pieces cached) same | speed:fast 26.6s DIFF  — find the latest 3 downloads, clean their names and
+  plan: {   "plan": [     {       "action": "Recall",       "params": {         "type": "download",         "sort": "latest",         "limit": 3       }     },     {       "action": "Rename",       "params": {         "source_path": "{{files}}",         "clean": true       }     },     {       "action": "ZipAction",       "params": {         "target": "{{files}}"       }     }   ] }
+  speed plan: {   "plan": [     {       "action": "Recall",       "params": {         "type": "pdf",         "when": "yesterday",         "folder": "~/Downloads"       }     },     {       "action": "Delete",       "params": {         "target_name": "{{files}}",         "path": "~/Downloads"       }     }   ] }
+[10/20] RECALL+DELETE: no-cache 27.1s | partial 26.6s (3 pieces cached) same | speed:fast 20.2s same  — find the pdfs i downloaded yesterday and delete th
+  plan: {   "plan": [     {       "action": "Recall",       "params": {         "type": "pdf",         "when": "yesterday",         "folder": "~/Downloads"       }     },     {       "action": "Delete",       "params": {         "target_name": "{{files}}",         "path": "~/Downloads"       }     }   ] }
+  speed plan: {   "plan": [     {       "action": "CreateFolder",       "params": {         "folder_name": "bugs",         "path": "~/Desktop"       }     },     {       "action": "FindFilesByExtension",       "params": {         "folder": "~/Desktop",         "extension": ".png"       }     },     {       "action": "MoveFile",       "params": {         "source_path": "{files}",         "destination_path": "~/Desktop/bugs"       }     }   ] }
+[11/20] CREATE+EXTENSION+FILES: no-cache 53.1s | partial 45.3s (3 pieces cached) same | speed:fast 41.6s DIFF  — create a folder named bugs and move all the .png f
+  plan: {   "plan": [     {       "action": "CreateFolder",       "params": {         "folder_name": "bugs",         "path": "~/Desktop"       }     },     {       "action": "FindFilesByExtension",       "params": {         "folder": "~/Desktop",         "extension": "png"       }     },     {       "action": "MoveFile",       "params": {         "source_path": "{files}",         "destination_path": "~/Desktop/bugs"       }     }   ] }
+  speed plan: {   "plan": [     {       "action": "CreateFolder",       "params": {         "folder_name": "backup",         "path": "~/Desktop"       }     },     {       "action": "CopyFile",       "params": {         "source_path": "{files}",         "destination_path": "~/Desktop/backup"       }     },     {       "action": "ZipAction",       "params": {         "target": "~/Desktop/backup",         "output_name": "backup.zip"       }     }   ] }
+[12/20] CREATE+FILES+ZIP: no-cache 76.2s | partial 66.2s (3 pieces cached) same | speed:fast 60.1s same  — make a folder called backup, copy my desktop pdfs 
+  plan: {   "plan": [     {       "action": "CreateFolder",       "params": {         "folder_name": "backup",         "path": "~/Desktop"       }     },     {       "action": "CopyFile",       "params": {         "source_path": "{files}",         "destination_path": "~/Desktop/backup"       }     },     {       "action": "ZipAction",       "params": {         "target": "~/Desktop/backup",         "output_name": "backup.zip"       }     }   ] }
+  speed plan: {   "plan": [     {       "action": "CreateFolder",       "params": {         "folder_name": "demo_7",         "path": "~/Desktop"       }     },     {       "action": "CreateFile",       "params": {         "filename": "notes.txt",         "path": "~/Desktop/demo_7"       }     }   ] }
+[13/20] READ+CREATE: no-cache 52.3s | partial 44.3s (3 pieces cached) same | speed:fast 34.2s same  — create a folder named demo_7 on my desktop and ins
+  plan: {   "plan": [     {       "action": "CreateFolder",       "params": {         "folder_name": "demo_7",         "path": "~/Desktop"       }     },     {       "action": "CreateFile",       "params": {         "filename": "notes.txt",         "path": "~/Desktop/demo_7"       }     }   ] }
+  speed plan: {   "plan": [     {       "action": "CreateFolder",       "params": {         "folder_name": "alpha",         "path": "~/Desktop"       }     },     {       "action": "GenerateCode",       "params": {         "prompt": "a simple hello world script",         "lang": "python",         "file_mode": "new",         "filename": "alpha/main.py"       }     },     {       "action": "OpenApp",       "params": {         "app_name": "main.py"       }     }   ] }
+[14/20] READ+CREATE+OPENCLOSE: no-cache 58.8s | partial 42.7s (4 pieces cached) same | speed:fast 37.5s DIFF  — create a project folder alpha with main.py and ope
+  plan: {   "plan": [     {       "action": "CreateFolder",       "params": {         "folder_name": "alpha",         "path": "~/Desktop"       }     },     {       "action": "GenerateCode",       "params": {         "prompt": "a simple hello world script",         "lang": "python",         "file_mode": "new",         "filename": "alpha/main.py"       }     },     {       "action": "OpenApp",       "params": {         "file_path": "~/Desktop/alpha"       }     }   ] }
+  speed plan: {   "plan": [     {       "action": "FindFilesByExtension",       "params": {         "folder": "~/Downloads",         "extension": ".tmp"       }     },     {       "action": "Delete",       "params": {         "target_name": "[{\"files\": \"*\"}]",         "path": "~/Downloads"       }     }   ] }
+[15/20] EXTENSION+DELETE: no-cache 32.7s | partial 27.9s (3 pieces cached) same | speed:fast 25.6s DIFF  — delete all .tmp files from my downloads
+  plan: {   "plan": [     {       "action": "FindFilesByExtension",       "params": {         "folder": "~/Downloads",         "extension": ".tmp"       }     },     {       "action": "Delete",       "params": {         "target_name": "{files}",         "path": "~/Downloads"       }     }   ] }
+  speed plan: {   "plan": [     {       "action": "FindFilesByExtension",       "params": {         "folder": "~/Desktop",         "extension": "docx"       }     },     {       "action": "ZipAction",       "params": {         "target": "{files}",         "output_name": "docx_backup"       }     },     {       "action": "EmailAction",       "params": {         "mode": "send",         "to": "vishwasmoond@gmail.com",         "subject": "Zipped Docx Files",         "body": "Please find the zipped .docx files attached."       }     }   ] }
+[16/20] EXTENSION+ZIP+EMAIL: no-cache 53.1s | partial 56.3s (4 pieces cached) same | speed:fast 55.7s same  — zip all the .docx files on my desktop and email th
+  plan: {   "plan": [     {       "action": "FindFilesByExtension",       "params": {         "folder": "~/Desktop",         "extension": "docx"       }     },     {       "action": "ZipAction",       "params": {         "target": "{files}",         "output_name": "docx_backup"       }     },     {       "action": "EmailAction",       "params": {         "mode": "send",         "to": "vishwasmoond@gmail.com",         "subject": "Zipped Docx Files",         "body": "Please find the zipped .docx files attached."       }     }   ] }
+  speed plan: {   "plan": [     {       "action": "OCRAction",       "params": {}     },     {       "action": "SummarizeText",       "params": {}     },     {       "action": "NotesAction",       "params": {         "mode": "create",         "title": "Screen Summary",         "text": "{{text}}"       }     }   ] }
+[17/20] OCR+SUMMARIZE+NOTES: no-cache 46.5s | partial 47.1s (4 pieces cached) same | speed:fast 40.2s same  — read whats on my screen, summarize it and save it 
+  plan: {   "plan": [     {       "action": "OCRAction",       "params": {}     },     {       "action": "SummarizeText",       "params": {}     },     {       "action": "NotesAction",       "params": {         "mode": "create",         "title": "Screen Summary",         "text": "{{text}}"       }     }   ] }
+  speed plan: {   "plan": [     {       "action": "ClipboardAction",       "params": {         "mode": "read"       }     }   ] }
+[18/20] OCR+CLIPBOARD: no-cache 37.3s | partial 35.6s (4 pieces cached) same | speed:fast 22.0s DIFF  — read the text on my screen and copy it
+  plan: {   "plan": [     {       "action": "OCRAction",       "params": {}     },     {       "action": "ClipboardAction",       "params": {         "mode": "write",         "text": "{{text}}"       }     }   ] }
+  speed plan: {   "plan": [     {       "action": "ListDirectory",       "params": {         "folder_name": "Documents"       }     },     {       "action": "SummarizeText",       "params": {}     }   ] }
+[19/20] LIST+SUMMARIZE: no-cache 40.2s | partial 35.3s (3 pieces cached) same | speed:fast 31.4s same  — list whats in my documents folder and summarize it
+  plan: {   "plan": [     {       "action": "ListDirectory",       "params": {         "folder_name": "Documents"       }     },     {       "action": "SummarizeText",       "params": {}     }   ] }
+  speed plan: {   "plan": [     {       "action": "PcControlAction",       "params": {         "operation": "check"       }     },     {       "action": "Suggestion",       "params": {}     },     {       "action": "ReminderAction",       "params": {         "task": "clean it",         "date": "tomorrow"       }     }   ] }
+[20/20] PCCONTROL+SUGGEST+REMINDER: no-cache 55.5s | partial 56.1s (3 pieces cached) same | speed:fast 39.1s DIFF  — my mac is full, tell me what to delete and remind 
+  plan: {   "plan": [     {       "action": "PcControlAction",       "params": {         "operation": "check"       }     },     {       "action": "Suggestion",       "params": {}     },     {       "action": "ReminderAction",       "params": {         "task": "clean up",         "date": "tomorrow"       }     }   ] }
+
+identical to the full prompt: 20/20   paths: {'partial': 20}
+median: no-cache 36.9s -> kvs 33.4s
+speed mode: identical 9/20, median 27.5s
+cache: {'model': 'granite4:micro', 'folder': 'kvs_cache/granite4_micro', 'entries': 41, 'pinned': 23, 'disk_mb': 2920.2}
