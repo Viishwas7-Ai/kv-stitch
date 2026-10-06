@@ -1,0 +1,39 @@
+loading model ...
+4 tests x (no-cache + start + 1 fast run(s)). Each line prints when its test is done.
+[1/4] WEB+NOTES+REMINDER ... no-cache
+  no-cache: {"plan": [{"action": "WebAction", "params": {"query": "latest news"}}], {"action": "NotesAction", "params": {"mode": "create", "title": "latest news", "text": "{text}"}}, {"action": "ReminderAction", "params": {"task": "{text}", "date": "today", "time": "5pm"}}]}
+ r0
+  fast r0: {"plan": [{"action": "WebAction", "params": {"query": "latest news"}}], {"action": "NotesAction", "params": {"mode": "create", "title": "latest news", "text": "latest news"}}}]
+ start
+  start: {"plan": [{"action": "WebAction", "params": {"query": "latest news"}}], {"action": "NotesAction", "params": {"mode": "create", "title": "latest news", "text": "{text}"}}, {"action": "ReminderAction", "params": {"task": "{text}", "date": "today", "time": "5pm"}}]}
+
+  no-cache 31.76s | start(partial) 28.12s text | fast r0 16.62s DIFF  — serach on web for latest new write into my notes a
+[2/4] RECALL+RENAME+RELEVANT ... no-cache
+  no-cache: {   "plan": [     {       "action": "Recall",       "params": {         "type": "pdf",         "sort": "latest",         "when": "yesterday",         "folder": "~/Downloads"       }     },     {       "action": "Rename",       "params": {         "source_path": "{{files}}",         "clean": true       }     },     {       "action": "RelevantFile",       "params": {}     },     {       "action": "MoveFile",       "params": {         "source_path": "{{files}}",         "destination_path": "{{folder}}"       }     }   ] }
+ r0
+  fast r0: {   "plan": [     {       "action": "Recall",       "params": {         "type": "pdf",         "sort": "latest",         "when": "yesterday",         "folder": "~/Downloads"       }     },     {       "action": "Rename",       "params": {         "old_name": "{{files}}",         "new_name": "{{files}}",         "folder": "~/Downloads"       }     }   ] }
+ start
+  start: {   "plan": [     {       "action": "Recall",       "params": {         "type": "pdf",         "sort": "latest",         "when": "yesterday",         "folder": "~/Downloads"       }     },     {       "action": "Rename",       "params": {         "source_path": "{{files}}",         "clean": true       }     },     {       "action": "RelevantFile",       "params": {}     },     {       "action": "MoveFile",       "params": {         "source_path": "{{files}}",         "destination_path": "{{folder}}"       }     }   ] }
+
+  no-cache 35.54s | start(partial) 33.19s text | fast r0 23.44s DIFF  — ok so find the late 2 downloads then clean there n
+[3/4] CREATE+EXTENSION+FILES ... no-cache
+  no-cache: {"plan": [{"action": "CreateFolder", "params": {"folder_name": "bugs", "path": "~/Desktop"}}, {"action": "MoveFile", "params": {"source_path": "{files}", "destination_path": "~/Desktop/bugs"}}]}
+ r0
+  fast r0: {"plan": [{"action": "CreateFolder", "params": {"folder_name": "bugs", "path": "~/Desktop"}}, {"action": "MoveFile", "params": {"source_path": "~/Desktop", "destination_path": "~/Desktop/bugs"}}]}
+ start
+  start: {"plan": [{"action": "CreateFolder", "params": {"folder_name": "bugs", "path": "~/Desktop"}}, {"action": "MoveFile", "params": {"source_path": "{files}", "destination_path": "~/Desktop/bugs"}}]}
+
+  no-cache 36.55s | start(partial) 30.31s text | fast r0 24.49s actions  — create a folder named bugs and move all the .png f
+[4/4] WEB+NOTES+CALENDAR ... no-cache
+  no-cache: {"plan": [{"action": "WebAction", "params": {"query": "latest ai news"}}, {"action": "NotesAction", "params": {"mode": "create", "title": "AI News", "text": "{text}"}}, {"action": "CalendarAction", "params": {"task": "AI News", "date": "tomorrow"}}]}
+ r0
+  fast r0: {"plan": [{"action": "WebAction", "params": {"query": "latest ai news"}}], {"action": "NotesAction", "params": {"mode": "create", "title": "AI News", "text": "{text}"}}}, {"action": "CalendarAction", "params": {"mode": "append", "title": "AI News", "text": "{text}", "date": "tomorrow"}}]}
+ start
+  start: {"plan": [{"action": "WebAction", "params": {"query": "latest ai news"}}, {"action": "NotesAction", "params": {"mode": "create", "title": "AI News", "text": "{text}"}}, {"action": "CalendarAction", "params": {"task": "AI News", "date": "tomorrow"}}]}
+
+  no-cache 27.15s | start(partial) 27.83s text | fast r0 21.64s DIFF  — search the latest ai news, save it in a note and a
+
+4 tests, median no-cache 33.65s
+exact start      : same plan 4/4 (text 4, json 0), same actions only 0, different 0   median 29.21s
+fast refresh    0: same plan 0/4 (text 0, json 0), same actions only 1, different 3   median 22.54s
+cache: {'model': 'granite4:micro', 'disk_mb': 206.4, 'entries': 3, 'pinned': 0}

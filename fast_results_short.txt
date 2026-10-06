@@ -1,0 +1,39 @@
+loading model ...
+4 tests x (no-cache + start + 1 fast run(s)). Each line prints when its test is done.
+[1/4] WEB+NOTES+REMINDER ... no-cache
+  no-cache: {   "plan": [     {       "act": "Web",       "params": {         "query": "latest news"       }     },     {       "act": "Notes",       "params": {         "mode": "create",         "title": "Latest News",         "text": "{text}"       }     },     {       "act": "Reminder",       "params": {         "task": "{text}",         "date": "today",         "time": "5pm"       }     }   ] }
+ r0
+  fast r0: {   "plan": [     {       "act": "Web",       "params": {         "query": "latest news"       }     },     {       "act": "Notes",       "params": {         "mode": "create",         "title": "latest news",         "text": "{text}"       }     },     {       "act": "Reminder",       "params": {         "task": "{text}",         "date": "today",         "time": "5pm"       }     }   ] }
+ start
+  start: {   "plan": [     {       "act": "Web",       "params": {         "query": "latest news"       }     },     {       "act": "Notes",       "params": {         "mode": "create",         "title": "Latest News",         "text": "{text}"       }     },     {       "act": "Reminder",       "params": {         "task": "{text}",         "date": "today",         "time": "5pm"       }     }   ] }
+
+  no-cache 17.61s | start(partial) 47.71s text | fast r0 30.33s actions  — serach on web for latest new write into my notes a
+[2/4] RECALL+RENAME+RELEVANT ... no-cache
+  no-cache: {   "plan": [     {       "act": "Recall",       "params": {         "type": "pdf",         "sort": "latest",         "when": "2",         "folder": "~/Downloads"       }     },     {       "act": "Rename",       "params": {         "source_path": "{{files}}",         "clean": true       }     },     {       "act": "RelevantFile",       "params": {}     },     {       "act": "MoveFile",       "params": {         "source_path": "{{files}}",         "destination_path": "{{folder}}"       }     }   ] }
+ r0
+  fast r0: {   "plan": [     {       "act": "Recall",       "params": {         "type": "pdf",         "sort": "latest",         "when": "yesterday",         "folder": "~/Downloads"       }     },     {       "act": "Recall",       "params": {         "type": "image",         "sort": "latest",         "when": "yesterday",         "folder": "~/Downloads"       }     },     {       "act": "Rename",       "params": {         "old_name": "{{files}}",         "new_name": "{{files}}",         "path": "~/Downloads"       }     }   ] }
+ start
+  start: {   "plan": [     {       "act": "Recall",       "params": {         "type": "pdf",         "sort": "latest",         "when": "2",         "folder": "~/Downloads"       }     },     {       "act": "Rename",       "params": {         "source_path": "{{files}}",         "clean": true       }     },     {       "act": "RelevantFile",       "params": {}     },     {       "act": "MoveFile",       "params": {         "source_path": "{{files}}",         "destination_path": "{{folder}}"       }     }   ] }
+
+  no-cache 46.20s | start(partial) 31.95s text | fast r0 27.29s DIFF  — ok so find the late 2 downloads then clean there n
+[3/4] CREATE+EXTENSION+FILES ... no-cache
+  no-cache: {   "plan": [     {       "act": "CreateFolder",       "params": {         "folder_name": "bugs",         "path": "~/Desktop"       }     },     {       "act": "FindFilesByExtension",       "params": {         "folder": "~/Desktop",         "extension": "png"       }     },     {       "act": "MoveFile",       "params": {         "source_path": "{files}",         "destination_path": "~/Desktop/bugs"       }     }   ] }
+ r0
+  fast r0: {   "plan": [     {       "act": "CreateFolder",       "params": {         "folder_name": "bugs",         "path": "~/Desktop"       }     },     {       "act": "FindFilesByExtension",       "params": {         "folder": "~/Desktop",         "extension": ".png"       }     },     {       "act": "MoveFile",       "params": {         "source_path": "{files}",         "destination_path": "~/Desktop/bugs"       }     }   ] }
+ start
+  start: {   "plan": [     {       "act": "CreateFolder",       "params": {         "folder_name": "bugs",         "path": "~/Desktop"       }     },     {       "act": "FindFilesByExtension",       "params": {         "folder": "~/Desktop",         "extension": "png"       }     },     {       "act": "MoveFile",       "params": {         "source_path": "{files}",         "destination_path": "~/Desktop/bugs"       }     }   ] }
+
+  no-cache 43.24s | start(partial) 38.28s text | fast r0 29.88s actions  — create a folder named bugs and move all the .png f
+[4/4] WEB+NOTES+CALENDAR ... no-cache
+  no-cache: {   "plan": [     {       "act": "Web",       "params": {         "query": "latest AI news"       }     },     {       "act": "Notes",       "params": {         "mode": "create",         "title": "AI News",         "text": "{text}"       }     },     {       "act": "Calendar",       "params": {         "task": "AI News Update",         "date": "tomorrow"       }     }   ] }
+ r0
+  fast r0: {   "plan": [     {       "act": "Web",       "params": {         "query": "latest AI news"       }     },     {       "act": "Notes",       "params": {         "mode": "create",         "title": "AI News",         "text": "{text}"       }     },     {       "act": "Calendar",       "params": {         "mode": "append",         "title": "AI News",         "date": "tomorrow",         "time": "10:00",         "duration": 60       }     }   ] }
+ start
+  start: {   "plan": [     {       "act": "Web",       "params": {         "query": "latest AI news"       }     },     {       "act": "Notes",       "params": {         "mode": "create",         "title": "AI News",         "text": "{text}"       }     },     {       "act": "Calendar",       "params": {         "task": "AI News Update",         "date": "tomorrow"       }     }   ] }
+
+  no-cache 31.90s | start(partial) 30.45s text | fast r0 28.92s actions  — search the latest ai news, save it in a note and a
+
+4 tests, median no-cache 37.57s
+exact start      : same plan 4/4 (text 4, json 0), same actions only 0, different 0   median 35.11s
+fast refresh    0: same plan 0/4 (text 0, json 0), same actions only 3, different 1   median 29.40s
+cache: {'model': 'granite4:micro', 'disk_mb': 205.7, 'entries': 3, 'pinned': 0}
