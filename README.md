@@ -81,6 +81,7 @@ be = PlannerBackend(
     max_disk_mb=3000,        # least recently used, unpinned caches are evicted past this
     fast_mode=False,         # opt-in stitching for uncached prompts (approximate)
     fast_max_modules=3,
+    fast_refresh=32,         # fast mode: leading tokens of each stitched module re-read in place
     fallback=lambda model, prompt: call_ollama(model, prompt),   # used if anything fails
 )
 
@@ -112,6 +113,12 @@ Paths, cheapest first: **full** (whole prefix cached, exact) → **partial** (lo
 the rest computed: exact) → **fast** (only if enabled and few modules: stitched, approximate) → **miss**
 (computed and remembered, exact) → **fallback** (the app's own call). Check a cases file end to end with
 `bench/backend_check.py`.
+
+**Fast mode** keeps the start exact and stitches only what follows it. Everything up to the first module
+(or a longer cached start, if there is one) is loaded from the exact cache; the modules after it are loaded
+from their own caches and shifted into place, with the first `fast_refresh` tokens of each re-read so the
+join sees what comes before it; fixed parts after the modules (rules, OS line) and the request are computed
+fresh. `bench/fast_check.py` compares it with the full prompt for several `--refresh` values.
 
 ## Results
 

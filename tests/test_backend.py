@@ -130,3 +130,30 @@ def test_changed_workflow_rebuilds_and_old_is_removed(be):
     r3 = be.add_workflows("tiny", parse_workflows("w: CREATE, NOTES"), build2)
     assert r3["built"] >= 1 and r3["removed_old"] >= 1
     assert be.stats()["pinned"] == 2
+
+
+def test_fast_is_exact_start_plus_stitched_modules(be):
+    be.fast_refresh = 4
+    pieces = [GLUE, CREATE, NOTES, ZIP, OS_]
+    r = be.plan("tiny", HEADER, pieces, TAIL, fast=True)
+    assert r.path == "fast"
+    names, _ = be._prepare(HEADER, pieces)
+    assert be._pc.has(names[:2])                        # the start (up to the first module) is cached
+    assert not be._pc.has(names)                         # the whole prompt is not
+
+
+def test_fast_with_everything_reread_equals_full(be):
+    be.fast_refresh = 10 ** 6                            # every stitched token re-read = no stitching
+    pieces = [GLUE, CREATE, NOTES, ZIP, OS_]
+    ref = full_text(be, pieces)
+    r = be.plan("tiny", HEADER, pieces, TAIL, fast=True)
+    assert r.path == "fast" and r.text == ref
+
+
+def test_fast_uses_a_longer_cached_start(be):
+    be.warm("tiny", HEADER, [[GLUE, CREATE, NOTES]])
+    be.fast_refresh = 10 ** 6
+    pieces = [GLUE, CREATE, NOTES, ZIP, OS_]
+    ref = full_text(be, pieces)
+    r = be.plan("tiny", HEADER, pieces, TAIL, fast=True)
+    assert r.path == "fast" and r.text == ref

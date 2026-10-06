@@ -14,8 +14,12 @@ For each request the backend picks the cheapest path that is still right:
     partial  the longest cached start is loaded,           exact
              only the rest is computed
     fast     (only when fast_mode is on and <= fast_max_modules modules)
-             modules stitched from separate caches,        approximate, may make mistakes
-             the last module computed fresh
+             the longest cached start (at least up to the  approximate, may make mistakes
+             first module) is loaded exactly; the modules
+             after it are stitched from their own caches,
+             each with its first `fast_refresh` tokens
+             re-read in place; fixed parts after them are
+             computed fresh
     miss     computed from scratch, then remembered        exact
     fallback the backend failed; the app's own function    whatever the app did before
              (e.g. its Ollama call) is used instead
@@ -32,7 +36,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable
 
-from .core import Stitcher
+from .core import MAIN, Stitcher, Timing
 from .prefix import PrefixCache
 from .workflows import Workflow
 
@@ -58,12 +62,14 @@ class PlannerBackend:
     def __init__(self, models: dict[str, str], cache_root: str, *, n_ctx: int = 8192,
                  n_gpu_layers: int = -1, chat: bool = True, max_tokens: int = 600,
                  save_after: int = 2, max_disk_mb: float | None = 3000, max_in_memory: int = 4,
-                 fast_mode: bool = False, fast_max_modules: int = 3,
+                 fast_mode: bool = False, fast_max_modules: int = 3, fast_refresh: int = 32,
                  fallback: Callable[[str, str], str] | None = None):
         """
         models:     {"granite3.1-moe:3b": "/path/to/blob", ...}
         cache_root: one sub-folder per model is made inside it
         chat:       wrap header/tail in the model's own chat template (needed for chat models)
+        fast_refresh: in fast mode, how many leading tokens of each stitched module are
+                    re-read in place so the join sees what comes before it (0 = none)
         fallback:   fallback(model_name, full_prompt_text) -> plan text, used if anything fails
         """
         self.models = dict(models)
@@ -72,6 +78,7 @@ class PlannerBackend:
         self.max_tokens = max_tokens
         self.save_after, self.max_disk_mb, self.max_in_memory = save_after, max_disk_mb, max_in_memory
         self.fast_mode, self.fast_max_modules = fast_mode, fast_max_modules
+        self.fast_refresh = fast_refresh
         self.fallback = fallback
         self._model = None            # name of the loaded model
         self._st: Stitcher | None = None
@@ -133,11 +140,10 @@ class PlannerBackend:
             # leading run of modules (a workflow + extras, or a new mix) can reuse it
             first_module_end = tuple(i + 1 for i in module_idx[:2])
             use_fast = self.fast_mode if fast is None else fast
-            if (use_fast and not self._pc.has(names) and module_idx
-                    and len(module_idx) <= self.fast_max_modules):
-                text, tm = self._st.run(names, tail_full, self.max_tokens,
-                                        fresh_idx={module_idx[-1]})
-                path = "fast"
+            if (use_fast and module_idx and len(module_idx) <= self.fast_max_modules
+                    and not self._pc.has(names)):
+                text, tm = self._fast(names, module_idx, tail_full)
+                path = "fast" if tm.extra.get("stitched") else tm.extra.get("prefix_kind", "miss")
             else:
                 text, tm = self._pc.run(names, tail_full, self.max_tokens,
                                         checkpoints=first_module_end)
@@ -150,6 +156,34 @@ class PlannerBackend:
                 raise
             text = self.fallback(model, pre_wrap_prompt(header, pieces, tail))
             return PlanResult(text, "fallback", time.perf_counter() - t0, detail={"error": repr(e)})
+
+    def _fast(self, names: list[str], module_idx: list[int], tail: str):
+        """Exact start + stitched modules. The start is the longest cached prefix, and at least
+        everything up to the first module (built and cached if it is not there yet)."""
+        st, pc = self._st, self._pc
+        first = module_idx[0] + 1
+        start = next((L for L in range(len(names) - 1, first, -1) if pc.has(names[:L])), first)
+        rest = names[start:]
+        mods = {i - start for i in module_idx if i >= start}
+        if not mods:                                   # nothing to stitch: plain exact path
+            return pc.run(names, tail, self.max_tokens, checkpoints=(first,))
+        for i in mods:                                 # building a block clears the context,
+            st.ensure_state(rest[i])                   # so do it before loading the start
+        tm = Timing()
+        t0 = time.perf_counter()
+        pos, kind = pc.load_prefix(names[:start])
+        fixed = {i for i in range(len(rest)) if i not in mods}
+        pos = st.append(rest, pos, self.fast_refresh, fresh_idx=fixed)
+        tm.load_s = time.perf_counter() - t0
+        tm.extra.update(prefix_kind=kind, start_pieces=start, stitched=len(mods))
+        tt = st.tok(tail)
+        t0 = time.perf_counter()
+        logits = st._decode(tt, pos, MAIN, want_last=True)
+        tm.tail_s, tm.tail_tokens = time.perf_counter() - t0, len(tt)
+        t0 = time.perf_counter()
+        text, tm.gen_tokens = st._generate(logits, pos + len(tt), self.max_tokens, [])
+        tm.gen_s = time.perf_counter() - t0
+        return text, tm
 
     def warm(self, model: str, header: str, piece_lists: list[list[Piece]]) -> int:
         """First run: build these prefixes now and pin them (never evicted).

@@ -182,24 +182,39 @@ class Stitcher:
         fresh_idx: positions in `names` that are decoded fresh instead of loaded, so they see
         everything before them exactly. Cached pieces after them are still loaded (shifted).
         """
+        for i, name in enumerate(names):
+            if not (fresh_idx and i in fresh_idx):
+                self.ensure_state(name)
         self.clear()
         self._load(self.header.state, MAIN)
         toks = list(self.header.tokens)
-        pos = len(toks)
+        pos = self.append(names, len(toks), refresh, fresh_idx, refresh_first=False)
+        for n in names:
+            toks += self.modules[n].tokens
+        return toks, pos
+
+    def append(self, names: list[str], pos: int, refresh: int = 0,
+               fresh_idx: set[int] | None = None, refresh_first: bool = True) -> int:
+        """Stitch `names` onto whatever MAIN already holds, starting at `pos`. Returns the
+        next position. Build the blocks' states (ensure_state) BEFORE filling MAIN: building
+        one clears the context.
+
+        refresh_first: also refresh the first block. True when MAIN holds more than the
+        header (an exact prefix with modules in it), since then no block saw what is before it.
+        """
         for i, name in enumerate(names):
             b = self.modules[name]
             n = len(b.tokens)
             if fresh_idx and i in fresh_idx:
                 self._decode(b.tokens, pos, MAIN)
-                toks += b.tokens
                 pos += n
                 continue
-            self.ensure_state(name)
-            b = self.modules[name]
-            # refresh: the first r tokens are decoded fresh, so they see every module
-            # before them (the first module already saw exactly the header). llama.cpp
-            # only accepts new tokens after the last position, so do this before the copy.
-            r = min(refresh, n) if refresh and i > 0 else 0
+            if b.state is None:
+                raise RuntimeError(f"block {name!r} has no state: call ensure_state first")
+            # refresh: the first r tokens are decoded fresh, so they see everything before
+            # them. llama.cpp only accepts new tokens after the last position, so do this
+            # before the copy.
+            r = min(refresh, n) if refresh and (i > 0 or refresh_first) else 0
             if r:
                 self._decode(b.tokens[:r], pos, MAIN)
             self._load(b.state, TMP)
@@ -209,9 +224,8 @@ class Stitcher:
                 lc.llama_memory_seq_rm(self.mem, TMP, pos, pos + r)
             lc.llama_memory_seq_cp(self.mem, TMP, MAIN, -1, -1)
             lc.llama_memory_seq_rm(self.mem, TMP, -1, -1)
-            toks += b.tokens
             pos += n
-        return toks, pos
+        return pos
 
     def _generate(self, logits, pos: int, max_tokens: int, stop: list[str]) -> tuple[str, int]:
         out, text = [], ""
