@@ -14,6 +14,7 @@ Kvs-v1/
   check.py           exact / speed mode vs the full prompt on your own tests
   spec_check.py      writing only: plain vs prompt lookup vs skeleton
   spec_compare.py    exact + spec vs speed + spec, end to end, against an earlier run
+  smr_compare.py     all modules + no cache vs router + exact/speed + speculative writing
   tests/test_kvs.py  every cached path checked against the plain full prompt
 ```
 
@@ -162,6 +163,24 @@ to end (reading + writing).
   writes, each pass checks 12 guesses, and reading is part of the time. A drafter from past
   plans (a repeated workflow is mostly the same JSON) and a smaller guess size are the next
   things to try.
+
+## The whole way: all modules, no cache → router + Kvs
+
+Same machine and model. 6 four-step commands; every module they need is one of the same 10.
+`smr_compare.py`, times end to end (reading + writing).
+
+| Way | Prompt | Median per command |
+|---|---|---|
+| all 10 modules, no cache, plain writing | ~8,060 tokens: the model picks the actions | 131.8 s |
+| **router (4 modules, its order) + exact + speculative writing** | only what the command needs | **56.5 s (2.3× faster)** |
+| router + speed mode + speculative writing | same | 45.4 s, but the exact plan on only 1/6 |
+
+The plans, read side by side: with all 10 modules the model set a reminder for the wrong day,
+copied a whole folder instead of the requested files, renamed a file to a placeholder, and on
+one command dropped the calendar step and wrote two reminders. With only the 4 modules it
+needed, it got 4 of the 6 right where the all-modules prompt went wrong or matched it, made the
+same date mistake on 1, and was a little less precise on 1 (a file type it was not asked for).
+A shorter, focused prompt gave clearer plans as well as faster ones.
 
 ## Check it on your own prompts
 
