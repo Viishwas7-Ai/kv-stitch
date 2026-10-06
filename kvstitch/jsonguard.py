@@ -64,8 +64,7 @@ class JsonGuard:
 
     def pick(self, logits) -> int | None:
         """Best allowed token, or None if none of the top_k is allowed."""
-        k = self.top_k if self.started else len(logits)   # the opening brace may rank low
-        for t in heapq.nlargest(k, range(len(logits)), key=logits.__getitem__):
+        for t in heapq.nlargest(self.top_k, range(len(logits)), key=logits.__getitem__):
             p = self.piece(t)
             if p and self._scan(p, commit=False):
                 self._scan(p, commit=True)
