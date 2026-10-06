@@ -10,6 +10,10 @@ Kvs-v1/
   kvs/cache.py       the cache folder: one entry per exact prompt start
   kvs/planner.py     KVPlanner: plan(), first-run builds, workflows, fallback
   kvs/workflows.py   workflows file:  name: MOD_A, MOD_B [@model]
+  kvs/speculate.py   speculative writing: drafters + the check-in-one-pass loop
+  check.py           exact / speed mode vs the full prompt on your own tests
+  spec_check.py      writing only: plain vs prompt lookup vs skeleton
+  spec_compare.py    exact + spec vs speed + spec, end to end, against an earlier run
   tests/test_kvs.py  every cached path checked against the plain full prompt
 ```
 
@@ -131,6 +135,33 @@ Exact mode on a repeated combination (a warmed workflow, `full` path) is the lar
 Most of the remaining time is the model writing the plan (~150 tokens of JSON), which a prompt
 cache cannot shorten. Asking for compact JSON, or forcing it at decoding time, broke plans on
 this model, so the output format is left as the model prefers it.
+
+## v1.5 benchmark: speculative writing
+
+Same machine, model and 20 commands as v1; each test starts like a first-time combination
+(only the pinned first-run starts cached). Reading is unchanged; the writing is speculative
+(`kvs/speculate.py`): a drafter guesses up to 12 tokens, the model checks them in one pass and
+keeps the ones it would have written itself. The drafter is the plan's JSON skeleton for the
+action order (the router is assumed perfect) plus prompt lookup. `spec_compare.py`, times end
+to end (reading + writing).
+
+| Mode | Median per command | Same plan as the full prompt | Tokens per pass |
+|---|---|---|---|
+| no cache | 36.9 s | reference | 1 |
+| exact (v1) | 33.4 s | 20/20 | 1 |
+| speed (v1) | 27.5 s | 9/20 | 1 |
+| **exact + speculative writing** | **27.7 s** | **20/20, character for character** | 2.09 |
+| speed + speculative writing | 25.0 s | 9/20 | 2.08 |
+
+- Exact + speculative writing is as fast as v1's speed mode with every plan exact: 25% faster
+  than no cache, 17% faster than exact alone, on combinations seen for the first time.
+- Speed mode now saves only ~2.7 s more and still changes 11 of 20 plans; on one test it fell
+  into a loop (the same step repeated until the 400-token limit, 65 s). Exact + speculative
+  writing is the recommended default.
+- 2.09 tokens per pass, not more: the values (queries, titles, times) are what the model really
+  writes, each pass checks 12 guesses, and reading is part of the time. A drafter from past
+  plans (a repeated workflow is mostly the same JSON) and a smaller guess size are the next
+  things to try.
 
 ## Check it on your own prompts
 
