@@ -226,6 +226,44 @@ Anything per user or per day (a username, today's date) should sit after the cac
 
 Median per command **44.8 s → 19.2 s** (2.3×). Cache on disk: 3.5 GB for 26 entries.
 
+### Exact start + stitched modules (fast mode)
+
+Three-step requests (three tool modules each). The start, everything up to and including the first module,
+comes from the exact cache, the way an app pins it for every core module on first launch. Then either the
+rest is computed (**exact start**), or modules 2 and 3 are loaded from their own caches and shifted into
+place (**fast**), optionally re-reading the first N tokens of each. `bench/fast_check.py`, greedy decoding,
+no-cache = the whole prompt computed from scratch.
+
+**granite-4.0-micro**, 4 three-step requests:
+
+| Mode | Same plan as no-cache | Median total |
+|---|---|---|
+| no-cache | (reference) | 40.0 s |
+| exact start, rest computed | **4/4, character for character** | 36.9 s |
+| fast, refresh 0 | 0/4: 3 same actions with small param differences, 1 wrong plan | 27.8 s |
+| fast, refresh 32 / 64 | 0/4: 3 same actions, 1 wrong; once one module's params moved into another | ~37 s |
+
+**granite3.1-moe 3B**, 8 three-step requests (beyond what this model is used for):
+
+| Mode | Same plan as no-cache | Same actions only | Wrong plan | Median total |
+|---|---|---|---|---|
+| no-cache | (reference) | | | 18.6 s |
+| fast, refresh 0 | 0/8 | 1 | 7 | 16.7 s |
+| fast, refresh 16 | 0/8 | 1 | 7 | 15.2 s |
+| fast, refresh 32 | 0/8 | 3 | 5 | 13.3 s |
+| fast, refresh 64 | 0/8 | 3 | 5 | 15.0 s |
+
+What this shows:
+- An exact start is always safe: the rest is computed after it, so the output is the full prompt's output.
+  It saves only the start's reading time, though (about 8% here).
+- Stitched modules never saw the modules before them, so the model reads them slightly differently. Small
+  differences early in the answer grow: different placeholders, mixed params, and on the hardest chain
+  (find → rename → move to the relevant folder) dropped steps. Re-reading the joins did not fix this and
+  once made it worse, so fast mode defaults to `fast_refresh=0` and stays off unless enabled.
+- With the prompt cached, most of the remaining time is the model **writing** the plan (~150 tokens of
+  JSON on micro), which no prompt cache can shorten. The large win stays a `full` hit on a repeated
+  combination (44.8 s → 19.2 s above).
+
 ## Related work
 
 Prompt Cache (Gim et al., 2023), EPIC (recompute the first tokens of each chunk), CacheBlend (selective
@@ -238,5 +276,6 @@ documents on server GPUs; this project looks at tool-doc modules for a small mod
 Prototype. The cache plumbing is tested (exactness tests above). On real tool-calling prompts, naive
 stitching is fast but loses steps; type-aware fresh pieces (`m1`/`m2`) recover most of the accuracy for
 about a third of the time saved. The exact prefix cache keeps the full prompt's output for repeated
-combinations (2.2× faster end to end on the larger model). Next: a prefix tree so combinations that share a
+combinations (2.2× faster end to end on the larger model). An exact start plus stitched modules (fast mode)
+saves about 30% but changes the plan on every three-step test, so the exact paths are the default. Next: a prefix tree so combinations that share a
 start reuse the shared part exactly, cheaper cache loading, and stitch-aware training for stitching itself.
