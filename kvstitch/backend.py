@@ -62,7 +62,7 @@ class PlannerBackend:
     def __init__(self, models: dict[str, str], cache_root: str, *, n_ctx: int = 8192,
                  n_gpu_layers: int = -1, chat: bool = True, max_tokens: int = 600,
                  save_after: int = 2, max_disk_mb: float | None = 3000, max_in_memory: int = 4,
-                 fast_mode: bool = False, fast_max_modules: int = 3, fast_refresh: int = 32,
+                 fast_mode: bool = False, fast_max_modules: int = 3, fast_refresh: int = 0,
                  fallback: Callable[[str, str], str] | None = None):
         """
         models:     {"granite3.1-moe:3b": "/path/to/blob", ...}

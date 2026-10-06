@@ -81,7 +81,7 @@ be = PlannerBackend(
     max_disk_mb=3000,        # least recently used, unpinned caches are evicted past this
     fast_mode=False,         # opt-in stitching for uncached prompts (approximate)
     fast_max_modules=3,
-    fast_refresh=32,         # fast mode: leading tokens of each stitched module re-read in place
+    fast_refresh=0,          # fast mode: leading tokens of each stitched module re-read in place
     fallback=lambda model, prompt: call_ollama(model, prompt),   # used if anything fails
 )
 
