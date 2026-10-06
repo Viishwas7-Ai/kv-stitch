@@ -203,6 +203,8 @@ class KVPlanner:
         every core module. Unchanged ones are skipped. Returns how many were built."""
         built = 0
         for i, pl in enumerate(start_lists, 1):
+            if progress:
+                progress(f"  building {'+'.join(p[0] for p in pl)} ...")
             t0 = time.perf_counter()
             done = self.build(model, header, pl)
             built += done
@@ -226,6 +228,8 @@ class KVPlanner:
             except Exception as e:
                 rep["skipped"].append(f"{wf.name}: {e}")
                 continue
+            if progress:
+                progress(f"  building workflow {wf.name} ...")
             t0 = time.perf_counter()
             n = self.build(model, header, pieces)
             last = max((i for i, p in enumerate(pieces) if len(p) > 2 and p[2]), default=None)
