@@ -68,8 +68,6 @@ ap.add_argument("--n-ctx", type=int, default=8192)
 ap.add_argument("--max-tokens", type=int, default=400)
 ap.add_argument("--no-chat", action="store_true")
 ap.add_argument("--show", action="store_true")
-ap.add_argument("--compact-json", action="store_true",
-                help="decode compact JSON only (whitespace outside strings blocked, brackets matched)")
 a = ap.parse_args()
 
 spec = importlib.util.spec_from_file_location("app_builder", a.builder)
@@ -86,7 +84,7 @@ for line in open(a.tests):
 refresh = [int(x) for x in a.refresh.split(",")]
 be = PlannerBackend({a.model_name: a.model}, a.cache_dir, n_ctx=a.n_ctx, chat=not a.no_chat,
                     max_tokens=a.max_tokens, save_after=1, fast_mode=True,
-                    fast_max_modules=max(len(m) for m, _ in tests), compact_json=a.compact_json)
+                    fast_max_modules=max(len(m) for m, _ in tests))
 print("loading model ...", flush=True)
 be._load(a.model_name)
 print(f"{len(tests)} tests x (no-cache + start + {len(refresh)} fast run(s)). "
