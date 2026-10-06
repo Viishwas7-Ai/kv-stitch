@@ -23,6 +23,8 @@ from dataclasses import dataclass, field
 
 import llama_cpp as lc
 
+from .jsonguard import JsonGuard
+
 MAIN = 0   # sequence the assembled prompt lives in
 TMP = 1    # scratch sequence used while loading a module
 
@@ -70,6 +72,8 @@ class Stitcher:
         self.n_batch = self.llm.n_batch
         self.header: Block | None = None
         self.modules: dict[str, Block] = {}
+        self.compact_json = False   # True: decode compact JSON only (see jsonguard.py)
+        self._pieces: dict[int, str] = {}
 
     # ---------- low level ----------
     def tok(self, text: str, bos: bool = False) -> list[int]:
@@ -227,16 +231,28 @@ class Stitcher:
             pos += n
         return pos
 
+    def _piece(self, t: int) -> str:
+        c = self._pieces.get(t)
+        if c is None:
+            c = self._pieces[t] = self.llm.detokenize([t], special=False).decode(errors="ignore")
+        return c
+
     def _generate(self, logits, pos: int, max_tokens: int, stop: list[str]) -> tuple[str, int]:
         out, text = [], ""
         eog = lambda t: lc.llama_vocab_is_eog(self.vocab, t)
+        guard = JsonGuard(self._piece) if self.compact_json else None
         for _ in range(max_tokens):
-            t = max(range(self.n_vocab), key=logits.__getitem__)   # greedy = deterministic
-            if eog(t):
-                break
+            if guard:
+                t = guard.pick(logits)          # best token that keeps compact, matched JSON
+                if t is None:
+                    break
+            else:
+                t = max(range(self.n_vocab), key=logits.__getitem__)   # greedy = deterministic
+                if eog(t):
+                    break
             out.append(t)
             text = self.llm.detokenize(out, special=False).decode(errors="ignore")
-            if any(s in text for s in stop):
+            if any(s in text for s in stop) or (guard and guard.done):
                 break
             logits = self._decode([t], pos, MAIN, want_last=True)
             pos += 1

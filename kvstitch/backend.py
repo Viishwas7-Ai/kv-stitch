@@ -63,6 +63,7 @@ class PlannerBackend:
                  n_gpu_layers: int = -1, chat: bool = True, max_tokens: int = 600,
                  save_after: int = 2, max_disk_mb: float | None = 3000, max_in_memory: int = 4,
                  fast_mode: bool = False, fast_max_modules: int = 3, fast_refresh: int = 0,
+                 compact_json: bool = False,
                  fallback: Callable[[str, str], str] | None = None):
         """
         models:     {"granite3.1-moe:3b": "/path/to/blob", ...}
@@ -70,6 +71,8 @@ class PlannerBackend:
         chat:       wrap header/tail in the model's own chat template (needed for chat models)
         fast_refresh: in fast mode, how many leading tokens of each stitched module are
                     re-read in place so the join sees what comes before it (0 = none)
+        compact_json: decode compact JSON only (no whitespace outside strings, matched
+                    brackets, stops when the object closes); the prompt is unchanged
         fallback:   fallback(model_name, full_prompt_text) -> plan text, used if anything fails
         """
         self.models = dict(models)
@@ -79,6 +82,7 @@ class PlannerBackend:
         self.save_after, self.max_disk_mb, self.max_in_memory = save_after, max_disk_mb, max_in_memory
         self.fast_mode, self.fast_max_modules = fast_mode, fast_max_modules
         self.fast_refresh = fast_refresh
+        self.compact_json = compact_json
         self.fallback = fallback
         self._model = None            # name of the loaded model
         self._st: Stitcher | None = None
@@ -95,6 +99,7 @@ class PlannerBackend:
         log.info("loading %s", model)
         self._st = Stitcher(path, n_ctx=self.n_ctx, n_gpu_layers=self.n_gpu_layers)
         self._wrap = self._st.chat_wrap() if self.chat else ("", "")
+        self._st.compact_json = self.compact_json
         safe = "".join(ch if ch.isalnum() or ch in "-_." else "_" for ch in model)
         self._pc = PrefixCache(self._st, cache_dir=os.path.join(self.cache_root, safe),
                                max_in_memory=self.max_in_memory, save_after=self.save_after,
