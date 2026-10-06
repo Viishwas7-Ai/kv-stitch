@@ -165,3 +165,23 @@ def test_exact_only_modules_never_use_speed_mode(kp):
     assert kp.plan("tiny", HEADER, [GLUE, CREATE, NOTES, RULES], TAIL, fast=True).path == "fast"
     r = kp.plan("tiny", HEADER, [GLUE, CREATE, ZIP, RULES], TAIL, fast=True)
     assert r.path != "fast"
+
+
+def test_speculative_writing_is_exact_and_uses_fewer_passes(kp):
+    from kvs.speculate import LookupDrafter, generate, skeleton_text
+    kp.load("tiny")
+    e = kp.eng
+    toks = e.tok(HEADER, bos=True) + e.tok(TAIL)
+    def start():
+        e.clear()
+        logits = e.decode(toks, 0, want_last=True)
+        return max(range(len(logits)), key=logits.__getitem__)
+    plain, st0 = generate(e, start(), len(toks), 40)
+    # a drafter that knows the answer: everything accepted, same text, far fewer passes
+    answer = e.tok(plain)
+    oracle, st1 = generate(e, start(), len(toks), 40, LookupDrafter([*toks[-2:], *answer], k=12, min_n=1, max_n=2))
+    assert oracle == plain and st1["passes"] < st0["passes"]
+    # a drafter that is always wrong: still the same text
+    junk, _ = generate(e, start(), len(toks), 40, lambda out: [5, 6, 7, 8])
+    assert junk == plain
+    assert '"action": "WebAction"' in skeleton_text(["WebAction", "NotesAction"])

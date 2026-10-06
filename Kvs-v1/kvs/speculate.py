@@ -1,0 +1,133 @@
+"""Speculative writing: a cheap drafter guesses the next tokens, the model checks them all in one
+pass, and keeps the ones it would have written itself. Reading the prompt is not touched.
+
+Exact: with greedy decoding every kept token is the model's own choice, so the plan is the same,
+byte for byte, as writing one token at a time. A wrong guess only costs the extra tokens in that
+one pass; the model's own token at the first wrong place comes from the same pass, for free.
+
+Drafters (no training, no second model):
+    SkeletonDrafter   the JSON shape of the plan, from the action order the router gives:
+                      {"plan": [ {"action": "WebAction", "params": { ... } }, ... ]}
+                      Values are left out: those are what the model really has to write.
+    LookupDrafter     prompt lookup: find the last few written tokens in the prompt and guess
+                      what followed them there (paths, param names, placeholders, action names).
+    Combined          the skeleton first, then the prompt.
+"""
+from __future__ import annotations
+
+import json
+
+import llama_cpp as lc
+import numpy as np
+
+from .engine import SEQ, Engine
+
+
+# ---------------- drafters ----------------
+class LookupDrafter:
+    """Guess by finding the last n written tokens in `source` (n = max_n .. min_n)."""
+
+    def __init__(self, source: list[int], k: int = 12, max_n: int = 4, min_n: int = 2,
+                 forward_only: bool = False):
+        self.src, self.k, self.max_n, self.min_n = source, k, max_n, min_n
+        self.forward_only = forward_only      # keep moving forward through the source
+        self.ptr = 0
+
+    def __call__(self, out: list[int]) -> list[int]:
+        src = self.src
+        for n in range(min(self.max_n, len(out)), self.min_n - 1, -1):
+            tail = out[-n:]
+            rng = range(self.ptr, len(src) - n) if self.forward_only else range(len(src) - n - 1, -1, -1)
+            for i in rng:
+                if src[i:i + n] == tail:
+                    draft = src[i + n:i + n + self.k]
+                    if draft:
+                        if self.forward_only:
+                            self.ptr = i + n
+                        return draft
+        return []
+
+
+def skeleton_text(actions: list[str], indent: int = 2) -> str:
+    """The plan's JSON shape for these actions, written the way json.dumps(indent=2) writes it
+    (the layout the model uses), with the param values left out."""
+    sp = lambda lvl: " " * (indent * lvl)
+    s = "{\n" + sp(1) + '"plan": [\n'
+    for i, a in enumerate(actions):
+        s += sp(2) + "{\n" + sp(3) + '"action": ' + json.dumps(a) + ",\n" + sp(3) + '"params": {\n' + sp(4) + '"'
+        s += "\x00"                                   # the values: unknown, never matched
+        s += "\n" + sp(3) + "}\n" + sp(2) + "}" + (",\n" if i < len(actions) - 1 else "\n")
+    return s + sp(1) + "]\n}"
+
+
+class Combined:
+    def __init__(self, *drafters):
+        self.drafters = drafters
+
+    def __call__(self, out: list[int]) -> list[int]:
+        for d in self.drafters:
+            g = d(out)
+            if g:
+                return g
+        return []
+
+
+def skeleton_drafter(eng: Engine, actions: list[str], k: int = 12) -> LookupDrafter:
+    toks = []
+    for part in skeleton_text(actions).split("\x00"):
+        toks += eng.tok(part) + [-1]                 # -1: a gap no written token can match
+    return LookupDrafter(toks, k=k, max_n=4, min_n=1, forward_only=True)
+
+
+# ---------------- writing ----------------
+def _argmax(eng: Engine, i: int) -> int:
+    ptr = lc.llama_get_logits_ith(eng.ctx, i)
+    return int(np.ctypeslib.as_array(ptr, shape=(eng.n_vocab,)).argmax())
+
+
+def _decode_all(eng: Engine, tokens: list[int], start: int):
+    """Read tokens at start.., keeping the logits of every one of them."""
+    batch = lc.llama_batch_init(len(tokens), 0, 1)
+    try:
+        for i, t in enumerate(tokens):
+            batch.token[i] = t
+            batch.pos[i] = start + i
+            batch.n_seq_id[i] = 1
+            batch.seq_id[i][0] = SEQ
+            batch.logits[i] = 1
+        batch.n_tokens = len(tokens)
+        if lc.llama_decode(eng.ctx, batch) != 0:
+            raise RuntimeError("llama_decode failed")
+    finally:
+        lc.llama_batch_free(batch)
+
+
+def generate(eng: Engine, first: int, pos: int, max_tokens: int, drafter=None) -> tuple[str, dict]:
+    """Greedy writing, optionally speculative. `first` is the model's first token (argmax of the
+    logits after the prompt), `pos` the position it goes to. With drafter=None this is plain
+    greedy writing, one token per pass (the fair baseline: same code, same argmax).
+    Returns (text, stats)."""
+    out: list[int] = []
+    t = first
+    passes = drafted = accepted = 0
+    eog = lambda x: lc.llama_vocab_is_eog(eng.vocab, x)
+    while len(out) < max_tokens and not eog(t):
+        draft = [d for d in (drafter(out + [t]) if drafter else []) if d >= 0]
+        draft = draft[:max(0, max_tokens - len(out) - 1)]
+        _decode_all(eng, [t] + draft, pos)
+        passes += 1
+        drafted += len(draft)
+        out.append(t)
+        nxt = _argmax(eng, 0)                       # the model's choice after t
+        m = 0
+        while m < len(draft) and draft[m] == nxt and not eog(nxt):
+            out.append(draft[m])                     # the guess is what it would write: keep
+            m += 1
+            nxt = _argmax(eng, m)
+        accepted += m
+        if m < len(draft):                           # drop the cells of the rejected guesses
+            lc.llama_memory_seq_rm(eng.mem, SEQ, pos + 1 + m, -1)
+        pos += 1 + m
+        t = nxt
+    text = eng.llm.detokenize(out, special=False).decode(errors="ignore")
+    return text, {"tokens": len(out), "passes": passes, "drafted": drafted, "accepted": accepted}
