@@ -40,7 +40,7 @@ def parse_json(text):
 
 def actions(obj):
     try:
-        return [step.get("action") for step in obj.get("plan", [])]
+        return [step.get("action", step.get("act")) for step in obj.get("plan", [])]
     except AttributeError:
         return None
 
