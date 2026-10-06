@@ -81,7 +81,7 @@ is built again. Build for each model the router uses (one model is in memory at 
 ```
 <cache_root>/
   granite4_micro/
-    3f9a...c1.kv            KV state
+    3f9a...c1.kv            KV state (a first-run start holds only its module's cells)
     3f9a...c1.prompt.txt    the exact text it holds — open it to see what is cached
     index.json              slot, uses, last use, pinned, tokens, created
   granite3.1-moe_3b/
@@ -94,6 +94,10 @@ is built again. Build for each model the router uses (one model is in memory at 
   text changed, the old version is **deleted**. A normal request whose text differs slightly
   (an optional line, a filtered rule) never deletes a pinned version; it replaces older
   unpinned versions only (`versions_per_slot=1`).
+- **Starts are stored small.** The base (header + everything before the module) is stored once;
+  each first-run start keeps only its module's cells and the key of that base. Loading puts the
+  base back and adds the module's cells where they were: the same KV, byte for byte. If a base
+  is deleted, its starts go with it.
 - `max_disk_mb`: the least recently used **unpinned** entries go first. Pinned ones stay.
 - To start over, delete the model's folder.
 

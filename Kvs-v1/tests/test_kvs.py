@@ -61,13 +61,15 @@ def test_checkpoint_reused_by_another_mix(kp):
 
 def test_changed_text_rebuilds_and_removes_old(kp):
     kp.build("tiny", HEADER, [GLUE, CREATE])
-    old = dict(kp.cache.index)
+    start = lambda: [k for k, e in kp.cache.index.items() if e["slot"] == "HEADER|glue|create"]
+    old = start()
     kp.build("tiny", HEADER, [GLUE, ("create", "CreateFolder makes a NEW folder.\n", True)])
-    assert len(kp.cache.index) == 1 and set(kp.cache.index) != set(old)
-    k = next(iter(kp.cache.index))
+    new = start()
+    assert len(old) == len(new) == 1 and old != new                   # one version, the new one
+    k = new[0]
     assert kp.cache.index[k]["pinned"]
     assert "NEW folder" in open(os.path.join(kp.cache.dir, k + ".prompt.txt")).read()
-    assert not os.path.exists(os.path.join(kp.cache.dir, next(iter(old)) + ".kv"))
+    assert not os.path.exists(os.path.join(kp.cache.dir, old[0] + ".kv"))
 
 
 def test_one_folder_per_model(kp, tmp_path):
@@ -133,3 +135,25 @@ def test_speed_mode_uses_exact_when_whole_prompt_cached(kp):
     kp.plan("tiny", HEADER, pieces, TAIL)
     assert kp.plan("tiny", HEADER, pieces, TAIL, fast=True).path == "full"
     assert kp.plan("tiny", HEADER, [GLUE, CREATE, RULES], TAIL, fast=True).path != "fast"   # 1 module
+
+
+def test_start_stored_as_delta_loads_exactly(kp):
+    """A start is stored as base (once) + the module's cells, and loads to the same KV."""
+    big = ("rules", "Rule. " * 300 + "\n")                         # a large base, like real core rules
+    kp.build_starts("tiny", HEADER, [[big, CREATE], [big, NOTES], [big, ZIP]])
+    idx = kp.cache.index
+    deltas = [k for k, e in idx.items() if e.get("parent")]
+    bases = [k for k, e in idx.items() if not e.get("parent")]
+    assert len(deltas) == 3 and len(bases) == 1
+    size = lambda k: os.path.getsize(os.path.join(kp.cache.dir, k + ".kv"))
+    assert all(size(d) < size(bases[0]) / 4 for d in deltas)        # each start is small
+    for pieces in ([big, CREATE, RULES], [big, ZIP, NOTES, RULES]):
+        r = kp.plan("tiny", HEADER, pieces, TAIL)
+        assert r.path == "partial" and r.text == reference(kp, pieces)
+
+
+def test_delta_goes_when_its_base_goes(kp):
+    kp.build("tiny", HEADER, [GLUE, CREATE])
+    base = next(k for k, e in kp.cache.index.items() if not e.get("parent"))
+    kp.cache._delete(base)
+    assert kp.cache.index == {}

@@ -80,6 +80,21 @@ class Engine:
         if lc.llama_state_seq_set_data(self.ctx, buf, len(blob), seq) == 0:
             raise RuntimeError("llama_state_seq_set_data failed")
 
+    def save_from(self, start: int) -> bytes:
+        """Save only the prompt's cells at positions >= start (the part after a stored base).
+        The prompt itself is not touched."""
+        lc.llama_memory_seq_cp(self.mem, SEQ, TMP, -1, -1)
+        lc.llama_memory_seq_rm(self.mem, TMP, 0, start)
+        blob = self.save(TMP)
+        lc.llama_memory_seq_rm(self.mem, TMP, -1, -1)
+        return blob
+
+    def add_cells(self, blob: bytes):
+        """Add cells saved by save_from() to the prompt, at the positions they were saved at."""
+        self.load(blob, TMP, clear=False)
+        lc.llama_memory_seq_cp(self.mem, TMP, SEQ, -1, -1)
+        lc.llama_memory_seq_rm(self.mem, TMP, -1, -1)
+
     def stitch(self, blob: bytes, keep_from: int, keep_to: int, at: int):
         """Speed mode: from a saved state, take only the cells at positions keep_from..keep_to
         (one module), move them to start at `at`, and add them to the prompt. The module was

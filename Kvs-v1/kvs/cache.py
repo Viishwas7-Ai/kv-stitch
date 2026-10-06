@@ -11,6 +11,11 @@ On disk, in <cache_root>/<model name>/:
 
 key  = hash of (model file, context size, exact tokens). Any change in the text, the model
        or n_ctx gives a new key, so a stale cache is never used.
+A first-run start (base + one module) is stored as a DELTA: only the module's cells, plus the
+key of its base (header + pieces before the module), which is stored once. Loading puts the
+base back and adds the module's cells at the same positions: the same KV, byte for byte,
+for a fraction of the disk.
+
 slot = the piece NAMES (e.g. "HEADER|GLUE|WEB|NOTES"). When the text behind a slot changes
        (an edited module, rule or base prompt), the new version is built and the old one
        deleted, keeping at most `versions_per_slot` versions.
@@ -61,7 +66,10 @@ class PrefixCache:
         return h.hexdigest()[:20]
 
     def has(self, key: str) -> bool:
-        return key in self.mem or os.path.exists(self._p(key + ".kv"))
+        if not (key in self.mem or os.path.exists(self._p(key + ".kv"))):
+            return False
+        parent = self.index.get(key, {}).get("parent")
+        return parent is None or self.has(parent)       # a delta needs its base
 
     def _delete(self, key: str):
         for ext in (".kv", ".prompt.txt"):
@@ -71,6 +79,19 @@ class PrefixCache:
                 pass
         self.mem.pop(key, None)
         self.index.pop(key, None)
+        for k in [k for k, e in self.index.items() if e.get("parent") == key]:
+            self._delete(k)                              # deltas of a deleted base go with it
+
+    def load(self, key: str) -> int:
+        """Put entry `key` into the engine's prompt. Returns the next position."""
+        state, n = self.read(key)
+        parent = self.index.get(key, {}).get("parent")
+        if parent:
+            self.load(parent)
+            self.eng.add_cells(state)
+        else:
+            self.eng.load(state)
+        return n
 
     # ---------- read / write ----------
     def read(self, key: str) -> tuple[bytes, int] | None:
@@ -92,7 +113,8 @@ class PrefixCache:
         while len(self.mem) > self.max_mem:
             self.mem.popitem(last=False)
 
-    def write(self, key: str, slot: str, state: bytes, n: int, text: str, pin: bool = False) -> int:
+    def write(self, key: str, slot: str, state: bytes, n: int, text: str, pin: bool = False,
+              parent: str | None = None) -> int:
         """Store an entry. Older versions of the same slot beyond `versions_per_slot` are
         deleted. Returns how many old versions were removed."""
         with open(self._p(key + ".kv.tmp"), "wb") as f:
@@ -105,6 +127,8 @@ class PrefixCache:
         self.index[key] = {"slot": slot, "uses": old.get("uses", 0), "last": time.time(),
                            "pinned": bool(old.get("pinned") or pin), "tokens": n,
                            "created": old.get("created", time.strftime("%Y-%m-%d %H:%M:%S"))}
+        if parent:
+            self.index[key]["parent"] = parent           # state holds only the cells after it
         self._remember(key, state, n)
         removed = self._drop_old_versions(slot, key)
         self._evict()

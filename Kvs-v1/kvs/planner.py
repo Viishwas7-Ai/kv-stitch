@@ -143,18 +143,16 @@ class KVPlanner:
         keys = {L: self._entry(runs, names, texts, L)[0] for L in range(1, n + 1)}
         start = next((L for L in range(n, 0, -1) if self.cache.has(keys[L])), 0)
         if start == n:
-            state, pos = self.cache.read(keys[n])
-            self.eng.load(state)
+            pos = self.cache.load(keys[n])
             self.cache.touch(keys[n])
             return pos, "full", {"cached_pieces": n}
         if start:
-            state, pos = self.cache.read(keys[start])
-            self.eng.load(state)
+            pos = self.cache.load(keys[start])
             self.cache.touch(keys[start])
         else:
             self.eng.clear()
             pos = 0
-        save_at = {L for L in mods[:self.checkpoints]} | {n}
+        save_at = {r + 1 for r in mods[:self.checkpoints]} | {n}
         removed = 0
         for L in range(start + 1, n + 1):
             self.eng.decode(runs[L - 1], pos)
@@ -187,14 +185,16 @@ class KVPlanner:
         for r in stitch:
             k, slot, text, toks = self._module_entry(runs, names, texts, base, r)
             if not self.cache.has(k):
-                self.eng.clear()
-                self.eng.decode(toks, 0)
-                self.cache.write(k, slot, self.eng.save(), len(toks), text)
+                self._base(runs, names, texts, base, pin=False)
+                bk = self._entry(runs, names, texts, base)[0]
+                b0 = sum(len(x) for x in runs[:base])
+                self.cache.load(bk)
+                self.eng.decode(runs[r], b0)
+                self.cache.write(k, slot, self.eng.save_from(b0), len(toks), text, parent=bk)
             mod_keys[r] = k
         # the exact start
         if self.cache.has(keys[start]):
-            state, pos = self.cache.read(keys[start])
-            self.eng.load(state)
+            pos = self.cache.load(keys[start])
             self.cache.touch(keys[start])
         else:
             toks = [t for x in runs[:start] for t in x]
@@ -243,20 +243,41 @@ class KVPlanner:
 
     def build(self, model: str, header: str, pieces: list[Piece], pin: bool = True) -> bool:
         """Build and keep the cache for exactly this prefix. Returns True if it was built,
-        False if it was already there (unchanged)."""
+        False if it was already there (unchanged). A start (base + one module, the module
+        last) is stored as its base, kept once, plus only the module's cells."""
         self.load(model)
-        runs, names, texts, _ = self._runs(header, pieces)
-        k, slot, text, _ = self._entry(runs, names, texts, len(runs))
+        runs, names, texts, mods = self._runs(header, pieces)
+        n = len(runs)
+        k, slot, text, _ = self._entry(runs, names, texts, n)
         if self.cache.has(k):
             if pin and not self.cache.index[k].get("pinned"):
                 self.cache.index[k]["pinned"] = True
                 self.cache._save_index()
             return False
+        if mods == [n - 1] and n > 1:                    # a start: base + this module
+            self._base(runs, names, texts, n - 1, pin)
+            base_tokens = sum(len(r) for r in runs[:n - 1])
+            bk = self._entry(runs, names, texts, n - 1)[0]
+            self.cache.load(bk)
+            self.eng.decode(runs[-1], base_tokens)
+            self.cache.write(k, slot, self.eng.save_from(base_tokens), base_tokens + len(runs[-1]),
+                             text, pin=pin, parent=bk)
+            return True
         toks = [t for r in runs for t in r]
         self.eng.clear()
         self.eng.decode(toks, 0)
         self.cache.write(k, slot, self.eng.save(), len(toks), text, pin=pin)
         return True
+
+    def _base(self, runs, names, texts, upto: int, pin: bool):
+        """Make sure the base runs[:upto] is cached (stored whole, once)."""
+        k, slot, text, n = self._entry(runs, names, texts, upto)
+        if not self.cache.has(k):
+            self.eng.clear()
+            self.eng.decode([t for r in runs[:upto] for t in r], 0)
+            self.cache.write(k, slot, self.eng.save(), n, text, pin=pin)
+        elif pin and not self.cache.index[k].get("pinned"):
+            self.cache.index[k]["pinned"] = True
 
     def build_starts(self, model: str, header: str, start_lists: list[list[Piece]],
                      progress: Callable[[str], None] | None = None) -> int:
