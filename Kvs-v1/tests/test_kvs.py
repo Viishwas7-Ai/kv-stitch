@@ -157,3 +157,11 @@ def test_delta_goes_when_its_base_goes(kp):
     base = next(k for k, e in kp.cache.index.items() if not e.get("parent"))
     kp.cache._delete(base)
     assert kp.cache.index == {}
+
+
+def test_exact_only_modules_never_use_speed_mode(kp):
+    kp.exact_only = {"zip"}
+    kp.build_starts("tiny", HEADER, [[GLUE, CREATE], [GLUE, NOTES], [GLUE, ZIP]])
+    assert kp.plan("tiny", HEADER, [GLUE, CREATE, NOTES, RULES], TAIL, fast=True).path == "fast"
+    r = kp.plan("tiny", HEADER, [GLUE, CREATE, ZIP, RULES], TAIL, fast=True)
+    assert r.path != "fast"

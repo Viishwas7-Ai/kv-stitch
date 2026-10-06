@@ -33,6 +33,7 @@ kp = KVPlanner(
     cache_root="~/Library/Application Support/MyApp/kvs",
     max_disk_mb=3000,
     fallback=lambda model, prompt: ollama_call(model, prompt),   # used if anything fails
+    exact_only={"DELETE", "RENAME", "FILES"},    # these modules never use speed mode
 )
 
 res = kp.plan(model_from_router, header, pieces, tail)
@@ -122,7 +123,7 @@ Speed mode's 11 different plans, judged by whether they would run:
 
 So roughly 15–17 of 20 would work, about 25% faster than exact. Use speed mode only where a
 wrong step is cheap; requests with destructive actions (delete, rename, move) should always
-take the exact path.
+take the exact path: list them in `exact_only` and speed mode is skipped for them.
 
 Exact mode on a repeated combination (a warmed workflow, `full` path) is the large win:
 44.8 s → 19.2 s median on 10 workflows, identical plans (see the main README).
