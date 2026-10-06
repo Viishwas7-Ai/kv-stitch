@@ -75,6 +75,7 @@ class KVPlanner:
                  n_gpu_layers: int = -1, chat: bool = True, max_tokens: int = 600,
                  max_disk_mb: float | None = 3000, max_in_memory: int = 2,
                  versions_per_slot: int = 1, checkpoints: int = 2,
+                 exact_only: set[str] | None = None,
                  fallback: Callable[[str, str], str] | None = None):
         """
         models:      {"granite4:micro": "/path/to/gguf", ...}; a model not listed here is
@@ -82,6 +83,8 @@ class KVPlanner:
         cache_root:  one sub-folder per model is made inside it
         chat:        wrap the prompt in the model's chat template (as Ollama does)
         checkpoints: also save the start up to the first N modules on the way
+        exact_only:  module names that always take the exact path, even when speed mode is
+                     asked for (e.g. {"DELETE", "RENAME", "FILES"}: a wrong step is costly)
         fallback:    fallback(model_name, prompt_text) -> plan text, used if anything fails
         """
         self.models = dict(models or {})
@@ -91,6 +94,7 @@ class KVPlanner:
         self.max_disk_mb, self.max_in_memory = max_disk_mb, max_in_memory
         self.versions_per_slot, self.checkpoints = versions_per_slot, checkpoints
         self.fallback = fallback
+        self.exact_only = set(exact_only or ())
         self.model: str | None = None
         self.eng: Engine | None = None
         self.cache: PrefixCache | None = None
@@ -222,6 +226,8 @@ class KVPlanner:
         try:
             self.load(model)
             runs, names, texts, mods = self._runs(header, pieces)
+            if fast and any(names[r] in self.exact_only for r in mods):
+                fast = False                         # a destructive module: never approximate
             if fast and self._can_stitch(runs, names, texts, mods):
                 pos, path, info = self._put_prefix_fast(runs, names, texts, mods)
             else:
