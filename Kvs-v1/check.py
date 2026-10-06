@@ -29,6 +29,7 @@ ap.add_argument("--cache-root", default="kvs_cache")
 ap.add_argument("--n-ctx", type=int, default=8192)
 ap.add_argument("--max-tokens", type=int, default=400)
 ap.add_argument("--show", action="store_true")
+ap.add_argument("--fast", action="store_true", help="also run speed mode (stitched) on every test")
 a = ap.parse_args()
 
 spec = importlib.util.spec_from_file_location("app_builder", a.builder)
@@ -60,6 +61,7 @@ if a.workflows:
 print(f"first run done in {time.perf_counter() - t0:.1f}s\n", flush=True)
 
 same, full_t, kvs_t, paths = 0, [], [], {}
+fast_same, fast_t = 0, []
 for i, (mods, cmd) in enumerate(tests, 1):
     header, pieces, tail = builder.build(mods, cmd)
     # the plain full prompt, no cache: the reference
@@ -69,18 +71,29 @@ for i, (mods, cmd) in enumerate(tests, 1):
     kp.eng.clear()
     ref, _ = kp.eng.generate(kp.eng.decode(toks, 0, want_last=True), len(toks), a.max_tokens)
     full_t.append(time.perf_counter() - t0)
+    fline = ""
+    if a.fast:
+        fr = kp.plan(a.model, header, pieces, tail, fast=True)
+        fok = fr.text.strip() == ref.strip()
+        fast_same += fok
+        fast_t.append(fr.seconds)
+        fline = f" | speed:{fr.path} {fr.seconds:.1f}s {'same' if fok else 'DIFF'}"
+        if a.show:
+            print("  speed plan:", fr.text.strip().replace("\n", " "))
     res = kp.plan(a.model, header, pieces, tail)
     ok = res.text.strip() == ref.strip()
     same += ok
     kvs_t.append(res.seconds)
     paths[res.path] = paths.get(res.path, 0) + 1
     print(f"[{i}/{len(tests)}] {'+'.join(mods)}: no-cache {full_t[-1]:.1f}s | {res.path} {res.seconds:.1f}s "
-          f"({res.detail.get('cached_pieces', 0)} pieces cached) {'same' if ok else 'DIFF'}  — {cmd[:50]}",
+          f"({res.detail.get('cached_pieces', 0)} pieces cached) {'same' if ok else 'DIFF'}{fline}  — {cmd[:50]}",
           flush=True)
     if a.show:
         print("  plan:", res.text.strip().replace("\n", " "))
 
 print(f"\nidentical to the full prompt: {same}/{len(tests)}   paths: {paths}")
 print(f"median: no-cache {stats.median(full_t):.1f}s -> kvs {stats.median(kvs_t):.1f}s")
+if a.fast:
+    print(f"speed mode: identical {fast_same}/{len(tests)}, median {stats.median(fast_t):.1f}s")
 print("cache:", kp.stats())
 kp.close()

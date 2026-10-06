@@ -15,6 +15,13 @@ Paths, all exact (same plan as reading the whole prompt from scratch):
     miss     nothing cached: everything is read
     fallback something failed: the app's own function (its Ollama call) answers
 
+Speed mode, only when asked (plan(..., fast=True)), and only when the whole prefix is not
+cached:
+    fast     the longest cached start (at least base + first module) is loaded exactly; every
+             module after it is stitched in from its own first-run start (base + that module);
+             fixed parts after the modules and the tail are read. Faster, NOT always the same
+             plan: a stitched module never saw the modules before it.
+
 After a partial or a miss the whole prefix is saved, plus the start up to the first and the
 second module, so later requests that share that start reuse it. A changed text (module,
 rule, base prompt) gets a new cache and the old version is deleted.
@@ -157,14 +164,68 @@ class KVPlanner:
                 removed += self.cache.write(k, slot, self.eng.save(), pos, text)
         return pos, ("partial" if start else "miss"), {"cached_pieces": start, "removed_old": removed}
 
+    # ---------- speed mode ----------
+    def _can_stitch(self, runs, names, texts, mods) -> bool:
+        """Worth it only with 2+ modules and when the whole prefix is not cached already."""
+        return len(mods) >= 2 and not self.cache.has(self._entry(runs, names, texts, len(runs))[0])
+
+    def _module_entry(self, runs, names, texts, base: int, r: int):
+        """The first-run start of module r alone: runs[:base] (header + base pieces) + runs[r]."""
+        toks = [t for x in runs[:base] for t in x] + runs[r]
+        return (self.cache.key(toks), "|".join(names[:base] + [names[r]]),
+                "".join(texts[:base]) + texts[r], toks)
+
+    def _put_prefix_fast(self, runs, names, texts, mods) -> tuple[int, str, dict]:
+        n, base = len(runs), mods[0]                    # runs[:base] = header + pieces before module 1
+        keys = {L: self._entry(runs, names, texts, L)[0] for L in range(base + 1, n + 1)}
+        start = next((L for L in range(n - 1, base, -1) if self.cache.has(keys[L])), base + 1)
+        stitch = [r for r in mods if r >= start]
+        if not stitch:                                  # nothing left to stitch: exact path
+            return self._put_prefix(runs, names, texts, mods)
+        # every module's own start must exist; building one clears the context, so first
+        mod_keys = {}
+        for r in stitch:
+            k, slot, text, toks = self._module_entry(runs, names, texts, base, r)
+            if not self.cache.has(k):
+                self.eng.clear()
+                self.eng.decode(toks, 0)
+                self.cache.write(k, slot, self.eng.save(), len(toks), text)
+            mod_keys[r] = k
+        # the exact start
+        if self.cache.has(keys[start]):
+            state, pos = self.cache.read(keys[start])
+            self.eng.load(state)
+            self.cache.touch(keys[start])
+        else:
+            toks = [t for x in runs[:start] for t in x]
+            self.eng.clear()
+            self.eng.decode(toks, 0)
+            pos = len(toks)
+            k, slot, text, _ = self._entry(runs, names, texts, start)
+            self.cache.write(k, slot, self.eng.save(), pos, text)
+        b = sum(len(x) for x in runs[:base])
+        for L in range(start + 1, n + 1):
+            r = L - 1
+            if r in mod_keys:
+                state, _ = self.cache.read(mod_keys[r])
+                self.eng.stitch(state, b, b + len(runs[r]), pos)
+                self.cache.touch(mod_keys[r])
+            else:
+                self.eng.decode(runs[r], pos)
+            pos += len(runs[r])
+        return pos, "fast", {"cached_pieces": start, "stitched": len(stitch)}
+
     # ---------- public ----------
     def plan(self, model: str, header: str, pieces: list[Piece], tail: str,
-             stop: list[str] | None = None) -> PlanResult:
+             stop: list[str] | None = None, fast: bool = False) -> PlanResult:
         t0 = time.perf_counter()
         try:
             self.load(model)
             runs, names, texts, mods = self._runs(header, pieces)
-            pos, path, info = self._put_prefix(runs, names, texts, mods)
+            if fast and self._can_stitch(runs, names, texts, mods):
+                pos, path, info = self._put_prefix_fast(runs, names, texts, mods)
+            else:
+                pos, path, info = self._put_prefix(runs, names, texts, mods)
             t_prompt = time.perf_counter()
             tt = self._t(tail + self.wrap[1])
             logits = self.eng.decode(tt, pos, want_last=True)

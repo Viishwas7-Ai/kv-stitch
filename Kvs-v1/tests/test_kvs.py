@@ -102,3 +102,34 @@ def test_request_variant_never_deletes_a_pinned_start(kp):
     pinned = set(kp.cache.index)
     kp.plan("tiny", HEADER, [GLUE, CREATE, ("rules", "Rules: json only, today.\n")], TAIL)
     assert pinned <= set(kp.cache.index)                                # still there
+
+
+def test_engine_stitch_with_whole_module_is_exact(kp):
+    """Mechanics: stitching module cells computed after the SAME text is exactly reading them."""
+    kp.load("tiny")
+    e = kp.eng
+    a, m = e.tok(HEADER, bos=True), e.tok(NOTES[1])
+    e.clear(); e.decode(a + m, 0); blob = e.save()
+    e.clear(); e.decode(a, 0)
+    e.stitch(blob, len(a), len(a) + len(m), len(a))
+    t = e.tok(TAIL)
+    out = e.generate(e.decode(t, len(a) + len(m), want_last=True), len(a) + len(m) + len(t), 12)[0]
+    e.clear()
+    full = e.generate(e.decode(a + m + t, 0, want_last=True), len(a + m + t), 12)[0]
+    assert out == full
+
+
+def test_speed_mode_stitches_every_module_after_the_start(kp):
+    base = [GLUE]
+    kp.build_starts("tiny", HEADER, [base + [CREATE], base + [NOTES], base + [ZIP]])
+    before = len(kp.cache.index)
+    r = kp.plan("tiny", HEADER, [GLUE, CREATE, NOTES, ZIP, RULES], TAIL, fast=True)
+    assert r.path == "fast" and r.detail["stitched"] == 2 and r.detail["cached_pieces"] == 3
+    assert len(kp.cache.index) == before            # used the first-run starts, built nothing new
+
+
+def test_speed_mode_uses_exact_when_whole_prompt_cached(kp):
+    pieces = [GLUE, CREATE, NOTES, RULES]
+    kp.plan("tiny", HEADER, pieces, TAIL)
+    assert kp.plan("tiny", HEADER, pieces, TAIL, fast=True).path == "full"
+    assert kp.plan("tiny", HEADER, [GLUE, CREATE, RULES], TAIL, fast=True).path != "fast"   # 1 module

@@ -11,7 +11,8 @@ import os
 
 import llama_cpp as lc
 
-SEQ = 0
+SEQ = 0    # the prompt
+TMP = 1    # scratch, used only by speed mode to bring in a module's cells
 
 
 class Engine:
@@ -21,7 +22,14 @@ class Engine:
         self.n_ctx = n_ctx
         self.llm = lc.Llama(model_path=model_path, n_ctx=n_ctx, n_gpu_layers=n_gpu_layers,
                             n_threads=n_threads, logits_all=False, verbose=verbose)
-        self.ctx = self.llm._ctx.ctx
+        # own context: speed mode needs 2 sequences sharing one KV cache
+        p = self.llm.context_params
+        p.n_seq_max = 2
+        p.kv_unified = True
+        self.ctx = lc.llama_init_from_model(self.llm._model.model, p)
+        if not self.ctx:
+            raise RuntimeError("could not create llama context")
+        self.llm._ctx.close()         # the default context is never used; free its KV cache
         self.mem = lc.llama_get_memory(self.ctx)
         self.vocab = lc.llama_model_get_vocab(self.llm._model.model)
         self.n_vocab = lc.llama_vocab_n_tokens(self.vocab)
@@ -59,17 +67,30 @@ class Engine:
             return [ptr[i] for i in range(self.n_vocab)]
         return None
 
-    def save(self) -> bytes:
-        n = lc.llama_state_seq_get_size(self.ctx, SEQ)
+    def save(self, seq: int = SEQ) -> bytes:
+        n = lc.llama_state_seq_get_size(self.ctx, seq)
         buf = (ctypes.c_uint8 * n)()
-        w = lc.llama_state_seq_get_data(self.ctx, buf, n, SEQ)
-        return ctypes.string_at(buf, w)
+        w = lc.llama_state_seq_get_data(self.ctx, buf, n, seq)
+        return ctypes.string_at(buf, w)   # bytes(buf[:w]) is ~60x slower
 
-    def load(self, blob: bytes):
-        self.clear()
+    def load(self, blob: bytes, seq: int = SEQ, clear: bool = True):
+        if clear:
+            self.clear()
         buf = (ctypes.c_uint8 * len(blob)).from_buffer_copy(blob)
-        if lc.llama_state_seq_set_data(self.ctx, buf, len(blob), SEQ) == 0:
+        if lc.llama_state_seq_set_data(self.ctx, buf, len(blob), seq) == 0:
             raise RuntimeError("llama_state_seq_set_data failed")
+
+    def stitch(self, blob: bytes, keep_from: int, keep_to: int, at: int):
+        """Speed mode: from a saved state, take only the cells at positions keep_from..keep_to
+        (one module), move them to start at `at`, and add them to the prompt. The module was
+        computed after other text than what is before it now, so this is approximate."""
+        self.load(blob, TMP, clear=False)
+        lc.llama_memory_seq_rm(self.mem, TMP, 0, keep_from)
+        lc.llama_memory_seq_rm(self.mem, TMP, keep_to, -1)
+        if at != keep_from:
+            lc.llama_memory_seq_add(self.mem, TMP, keep_from, keep_to, at - keep_from)
+        lc.llama_memory_seq_cp(self.mem, TMP, SEQ, -1, -1)
+        lc.llama_memory_seq_rm(self.mem, TMP, -1, -1)
 
     def generate(self, logits, pos: int, max_tokens: int, stop: list[str] | None = None) -> tuple[str, int]:
         out, text = [], ""
@@ -103,7 +124,9 @@ class Engine:
         return pre, suf
 
     def close(self):
+        if getattr(self, "ctx", None):
+            lc.llama_free(self.ctx)
+            self.ctx = None
         if getattr(self, "llm", None) is not None:
             self.llm.close()
             self.llm = None
-            self.ctx = None

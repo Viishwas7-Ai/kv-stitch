@@ -37,7 +37,7 @@ kp = KVPlanner(
 
 res = kp.plan(model_from_router, header, pieces, tail)
 res.text      # the plan text, exactly what the model writes for the full prompt
-res.path      # full | partial | miss | fallback
+res.path      # full | partial | miss | fast | fallback
 res.detail    # cached_pieces, prompt_s, gen_tokens, total_s, removed_old
 ```
 
@@ -47,6 +47,13 @@ res.detail    # cached_pieces, prompt_s, gen_tokens, total_s, removed_old
 | `partial` | a start of it was cached (first-run start, workflow, earlier request) | the rest is read after it |
 | `miss` | nothing matches | everything is read |
 | `fallback` | an error | the app's own call answers |
+
+**Speed mode** (`kp.plan(..., fast=True)`, off unless asked): the longest cached start (at least
+base + first module) is loaded exactly, and **every module after it is stitched in from its own
+first-run start** (base + that module), so it needs no extra cache files. Fixed parts after the
+modules and the tail are read. Faster, but **not always the same plan**: a stitched module never
+saw the modules before it. If the whole prefix is cached, or there is only one module, the exact
+path is used.
 
 After a `partial` or `miss` the whole prefix is saved, and so is the start up to the first and
 the second module (`checkpoints=2`), so the next request that shares that start reuses it.
@@ -98,7 +105,7 @@ python Kvs-v1/check.py granite4:micro --builder my_builder.py --tests tests.txt 
 ```
 Runs the first run (starts + workflows), then every test command twice: the plain full prompt
 (no cache) and `KVPlanner.plan`, and reports whether the plans are identical, the path taken
-and the times. Run it a second time to see the first run skip everything.
+and the times. Add `--fast` to also run speed mode on every test. Run it a second time to see the first run skip everything.
 
 ## Tests
 
