@@ -101,6 +101,36 @@ is built again. Build for each model the router uses (one model is in memory at 
 - `max_disk_mb`: the least recently used **unpinned** entries go first. Pinned ones stay.
 - To start over, delete the model's folder.
 
+## v1 benchmark
+
+granite-4.0-micro (3B) on an 8 GB M3 MacBook Air, other apps open, greedy decoding.
+20 test commands, 2–3 tool modules each, 21 different modules, typos included. Every
+first-run start built (base + each module); no workflows warmed, so every request was a
+combination seen for the first time (the hardest case for the cache).
+
+| Mode | Median per command | Same plan as the full prompt |
+|---|---|---|
+| no cache (whole prompt read) | 36.9 s | reference |
+| **exact** (`partial`: start loaded, rest read) | 33.4 s | **20/20, character for character** |
+| speed (`fast`: start + stitched modules) | 27.5 s | 9/20 identical |
+
+Speed mode's 11 different plans, judged by whether they would run:
+- 6 harmless: an extra optional param, a path made explicit, `.png` vs `png`, wording in a reminder;
+- 2 missing an optional param a plan validator can fill;
+- 3 wrong: an "open" step aimed at the wrong target, a dropped read-the-screen step, and a
+  garbled target on a **delete** step.
+
+So roughly 15–17 of 20 would work, about 25% faster than exact. Use speed mode only where a
+wrong step is cheap; requests with destructive actions (delete, rename, move) should always
+take the exact path.
+
+Exact mode on a repeated combination (a warmed workflow, `full` path) is the large win:
+44.8 s → 19.2 s median on 10 workflows, identical plans (see the main README).
+
+Most of the remaining time is the model writing the plan (~150 tokens of JSON), which a prompt
+cache cannot shorten. Asking for compact JSON, or forcing it at decoding time, broke plans on
+this model, so the output format is left as the model prefers it.
+
 ## Check it on your own prompts
 
 ```bash
