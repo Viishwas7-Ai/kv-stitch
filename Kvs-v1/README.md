@@ -90,6 +90,16 @@ is built again. Build for each model the router uses (one model is in memory at 
 - `max_disk_mb`: the least recently used **unpinned** entries go first. Pinned ones stay.
 - To start over, delete the model's folder.
 
+## Check it on your own prompts
+
+```bash
+python Kvs-v1/check.py granite4:micro --builder my_builder.py --tests tests.txt \
+    --workflows workflows.txt --starts WEB,NOTES,RECALL --cache-root kvs_cache
+```
+Runs the first run (starts + workflows), then every test command twice: the plain full prompt
+(no cache) and `KVPlanner.plan`, and reports whether the plans are identical, the path taken
+and the times. Run it a second time to see the first run skip everything.
+
 ## Tests
 
 ```bash
