@@ -83,16 +83,21 @@ refresh = [int(x) for x in a.refresh.split(",")]
 be = PlannerBackend({a.model_name: a.model}, a.cache_dir, n_ctx=a.n_ctx, chat=not a.no_chat,
                     max_tokens=a.max_tokens, save_after=1, fast_mode=True,
                     fast_max_modules=max(len(m) for m, _ in tests))
+print("loading model ...", flush=True)
 be._load(a.model_name)
+print(f"{len(tests)} tests x (1 full + {len(refresh)} refresh values x 2 runs). "
+      "Each line prints when its test is done.", flush=True)
 
 score = {r: {"text": 0, "json": 0, "actions": 0, "DIFF": 0} for r in refresh}
 full_t, fast_t = [], {r: [] for r in refresh}
 for i, (mods, cmd) in enumerate(tests, 1):
+    print(f"[{i}/{len(tests)}] {'+'.join(mods)} ...", end="", flush=True)
     header, pieces, tail = builder.build(mods, cmd)
     names, _ = be._prepare(header, pieces)
     t0 = time.perf_counter()
     ref, _ = be._st.run_full(names, tail + be._wrap[1], a.max_tokens)
     full_t.append(time.perf_counter() - t0)
+    print(" full", end="", flush=True)
     line = [f"[{i}/{len(tests)}] {'+'.join(mods)}: full {full_t[-1]:.2f}s"]
     if a.show:
         print("  full:", ref.strip().replace("\n", " "))
@@ -104,9 +109,10 @@ for i, (mods, cmd) in enumerate(tests, 1):
         score[r][v] += 1
         fast_t[r].append(res.seconds)
         line.append(f"r{r} {res.path} {res.seconds:.2f}s {v}")
+        print(f" r{r}", end="", flush=True)
         if a.show:
             print(f"  r{r}:", res.text.strip().replace("\n", " "))
-    print(" | ".join(line) + f"  — {cmd[:50]}", flush=True)
+    print("\n  " + " | ".join(line) + f"  — {cmd[:50]}", flush=True)
 
 print(f"\n{len(tests)} tests, median full {stats.median(full_t):.2f}s")
 for r in refresh:
