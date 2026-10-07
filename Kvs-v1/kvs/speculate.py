@@ -79,6 +79,44 @@ def skeleton_drafter(eng: Engine, actions: list[str], k: int = 12) -> LookupDraf
     return LookupDrafter(toks, k=k, max_n=4, min_n=1, forward_only=True)
 
 
+def example_steps(texts: list[str]) -> list[dict]:
+    """Every step example the module docs show ({"action": ..., "params": {...}}), parsed."""
+    out, dec = [], json.JSONDecoder()
+    # docs often escape braces for str.format: {{ "action": ... }} -> { "action": ... }
+    texts = [t for text in texts for t in (text, text.replace("{{", "{").replace("}}", "}"))]
+    for text in texts:
+        i = 0
+        while True:
+            i = text.find("{", i)
+            if i < 0:
+                break
+            try:
+                obj, end = dec.raw_decode(text[i:])
+            except ValueError:
+                i += 1
+                continue
+            if isinstance(obj, dict) and isinstance(obj.get("action"), str) and obj not in out:
+                out.append(obj)
+            i += max(end, 1)
+    return out
+
+
+def phrasebook_drafter(eng: Engine, module_texts: list[str], k: int = 12) -> LookupDrafter:
+    """Every documented step, written the way the plan writes a step (json indent=2, nested
+    inside "plan": [ ... ]), so one guess can cover a whole step: action, param names and,
+    when the docs show them, common values. Wrong guesses are simply rejected."""
+    toks = []
+    seen = set()
+    for st in example_steps(module_texts):
+        body = json.dumps(st, indent=2, ensure_ascii=False)
+        text = "    " + body.replace("\n", "\n    ")
+        if text in seen:
+            continue
+        seen.add(text)
+        toks += eng.tok(text) + [-1]
+    return LookupDrafter(toks, k=k, max_n=4, min_n=3)
+
+
 # ---------------- writing ----------------
 def _argmax(eng: Engine, i: int) -> int:
     ptr = lc.llama_get_logits_ith(eng.ctx, i)

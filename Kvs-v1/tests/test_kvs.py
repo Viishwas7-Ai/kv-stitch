@@ -185,3 +185,11 @@ def test_speculative_writing_is_exact_and_uses_fewer_passes(kp):
     junk, _ = generate(e, start(), len(toks), 40, lambda out: [5, 6, 7, 8])
     assert junk == plain
     assert '"action": "WebAction"' in skeleton_text(["WebAction", "NotesAction"])
+
+
+def test_phrasebook_finds_documented_steps():
+    from kvs.speculate import example_steps
+    docs = ['Use it like { "action": "NotesAction", "params": {"mode": "create", "title": "x"} } ok',
+            'bad { not json } and {"action": "WebAction", "params": {"query": "q"}}']
+    acts = [s["action"] for s in example_steps(docs)]
+    assert acts == ["NotesAction", "WebAction"]

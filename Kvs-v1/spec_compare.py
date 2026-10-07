@@ -22,7 +22,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kvs import KVPlanner  # noqa: E402
-from kvs.speculate import Combined, LookupDrafter, generate, skeleton_drafter  # noqa: E402
+from kvs.speculate import Combined, LookupDrafter, generate, phrasebook_drafter, skeleton_drafter  # noqa: E402
 
 ap = argparse.ArgumentParser()
 ap.add_argument("model")
@@ -34,6 +34,10 @@ ap.add_argument("--cache-root", default="kvs_cache")
 ap.add_argument("--n-ctx", type=int, default=8192)
 ap.add_argument("--max-tokens", type=int, default=400)
 ap.add_argument("--k", type=int, default=12, help="tokens guessed per pass")
+ap.add_argument("--phrasebook", action="store_true",
+                help="also draft from every step example in the module docs, in the plan's layout")
+ap.add_argument("--only", default="", help="comma list: run only these ways (exact+spec,fast+spec)")
+ap.add_argument("--limit", type=int, default=0, help="run only the first N tests")
 ap.add_argument("--show", action="store_true")
 ap.add_argument("--keep-cached", action="store_true",
                 help="use whatever is cached; by default each test starts like a first-time "
@@ -55,6 +59,8 @@ if a.ref:
     refs = [l[len("  plan: "):].rstrip("\n") for l in open(a.ref) if l.startswith("  plan: ")]
     if len(refs) != len(tests):
         sys.exit(f"--ref has {len(refs)} plans but there are {len(tests)} tests")
+if a.limit:
+    tests, refs = tests[:a.limit], refs[:a.limit]
 
 norm = lambda s: s.strip().replace("\n", " ")
 ACT = re.compile(r'"action"\s*:\s*"([^"]+)"')
@@ -64,12 +70,12 @@ print("loading model ...", flush=True)
 kp.load(a.model)
 eng = kp.eng
 
-ways = ["exact+spec", "fast+spec"]
+ways = [w.strip() for w in a.only.split(",") if w.strip()] or ["exact+spec", "fast+spec"]
 times = {w: [] for w in ways}
 same = {w: 0 for w in ways}
 tpp = {w: [] for w in ways}
 paths = {w: {} for w in ways}
-print(f"{len(tests)} tests x 2 ways. Each line prints when its test is done.\n", flush=True)
+print(f"{len(tests)} tests x {len(ways)} way(s){' + phrasebook' if a.phrasebook else ''}. Each line prints when its test is done.\n", flush=True)
 for i, (mods, cmd) in enumerate(tests, 1):
     header, pieces, tail = builder.build(mods, cmd)
     runs, names, texts, midx = kp._runs(header, pieces)
@@ -92,7 +98,10 @@ for i, (mods, cmd) in enumerate(tests, 1):
         logits = eng.decode(tt, pos, want_last=True)
         first = max(range(len(logits)), key=logits.__getitem__)
         prompt = [t for r in runs for t in r] + tt
-        drafter = Combined(skeleton_drafter(eng, actions, k=a.k), LookupDrafter(prompt, k=a.k))
+        parts = [skeleton_drafter(eng, actions, k=a.k), LookupDrafter(prompt, k=a.k)]
+        if a.phrasebook:
+            parts.insert(0, phrasebook_drafter(eng, [p[1] for p in pieces if len(p) > 2 and p[2]], k=a.k))
+        drafter = Combined(*parts)
         text, st = generate(eng, first, pos + len(tt), a.max_tokens, drafter)
         secs = time.perf_counter() - t0
         kp.cache._save_index()
