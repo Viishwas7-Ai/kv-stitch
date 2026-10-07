@@ -164,6 +164,17 @@ to end (reading + writing).
   plans (a repeated workflow is mostly the same JSON) and a smaller guess size are the next
   things to try.
 
+**Phrasebook drafter** (`--phrasebook`): every step example in the module docs, rewritten in
+the plan's layout, tried before the skeleton and the prompt. Same 8 first tests, exact path:
+
+| Drafter | Same plan | Passes (8 tests) | Tokens per pass | Median per command |
+|---|---|---|---|---|
+| skeleton + prompt lookup | 8/8 | 372 | 2.09 | 23.9 s |
+| **phrasebook + skeleton + prompt lookup** | **8/8** | **187** | **3.83** | **22.5 s** |
+
+Half the passes for the same plans. The time falls less than the passes, because each pass now
+checks up to 12 guessed tokens and reading the prompt is part of the time.
+
 ## The whole way: all modules, no cache → router + Kvs
 
 Same machine and model. 6 four-step commands; every module they need is one of the same 10.
