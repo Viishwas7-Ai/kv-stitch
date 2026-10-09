@@ -33,13 +33,16 @@ ap.add_argument("model")
 ap.add_argument("--gguf")
 ap.add_argument("--builder", required=True)
 ap.add_argument("--tests", required=True)
-ap.add_argument("--dump", required=True, help="comma list: the modules of the raw dump prompt")
+ap.add_argument("--dump", default="", help="comma list: the modules of the raw dump prompt")
 ap.add_argument("--cache-root", default="kvs_cache")
 ap.add_argument("--n-ctx", type=int, default=8192)
 ap.add_argument("--n-ctx-dump", type=int, default=16384)
 ap.add_argument("--max-tokens", type=int, default=500)
 ap.add_argument("--k", type=int, default=12)
 ap.add_argument("--show", action="store_true")
+ap.add_argument("--skip-dump", action="store_true", help="do not run the raw dump (way 1)")
+ap.add_argument("--full-hit", action="store_true",
+                help="add way 5, hit+pred: the whole prompt already cached (a repeated command)")
 a = ap.parse_args()
 
 spec = importlib.util.spec_from_file_location("app_builder", a.builder)
@@ -52,7 +55,7 @@ for line in open(a.tests):
         need, extra, cmd = [x.strip() for x in line.split("|", 2)]
         split = lambda s: [m.strip() for m in s.split(",") if m.strip()]
         tests.append((split(need), split(extra), cmd))
-DUMP = [m.strip() for m in a.dump.split(",") if m.strip()]
+DUMP = [m.strip() for m in (a.dump or "").split(",") if m.strip()]
 ACT = re.compile(r'"action"\s*:\s*"([^"]+)"')
 norm = lambda s: s.strip().replace("\n", " ")
 res = {}
@@ -64,11 +67,15 @@ def first_token(eng, toks, pos):
 
 
 # ---------- 1) the raw dump ----------
-kp = KVPlanner({a.model: a.gguf} if a.gguf else {}, a.cache_root + "_unused", n_ctx=a.n_ctx_dump)
-print(f"loading model (context {a.n_ctx_dump}) for the {len(DUMP)}-module dump ...", flush=True)
-kp.load(a.model)
-eng = kp.eng
-for i, (need, extra, cmd) in enumerate(tests, 1):
+if a.skip_dump or not DUMP:
+    for i in range(1, len(tests) + 1):
+        res[(i, "dump")] = None
+kp = None if (a.skip_dump or not DUMP) else KVPlanner({a.model: a.gguf} if a.gguf else {}, a.cache_root + "_unused", n_ctx=a.n_ctx_dump)
+for i, (need, extra, cmd) in enumerate(tests if kp else [], 1):
+    if i == 1:
+        print(f"loading model (context {a.n_ctx_dump}) for the {len(DUMP)}-module dump ...", flush=True)
+        kp.load(a.model)
+        eng = kp.eng
     header, pieces, tail = builder.build(DUMP, cmd)
     toks = eng.tok(kp.wrap[0] + header, bos=True) + [t for p in pieces for t in eng.tok(p[1])] \
         + eng.tok(tail + kp.wrap[1])
@@ -80,7 +87,8 @@ for i, (need, extra, cmd) in enumerate(tests, 1):
           f"actions {ACT.findall(text)}", flush=True)
     if a.show:
         print("  plan:", norm(text))
-kp.close()
+if kp:
+    kp.close()
 
 # ---------- 2-4) the router's modules (needed + extra) ----------
 kp = KVPlanner({a.model: a.gguf} if a.gguf else {}, a.cache_root, n_ctx=a.n_ctx)
@@ -102,7 +110,22 @@ for i, (need, extra, cmd) in enumerate(tests, 1):
     ref, st = generate(eng, first_token(eng, toks, 0), len(toks), a.max_tokens)
     res[(i, "full+extra")] = (time.perf_counter() - t0, ref, st)
 
-    for w in ["exact+pred", "fast+pred"]:
+    ways = ["exact+pred", "fast+pred"] + (["hit+pred"] if a.full_hit else [])
+    for w in ways:
+        if w == "hit+pred":
+            kp._put_prefix(runs, names, texts, midx)          # first use (untimed): caches the whole prompt
+            kp.cache._save_index()
+            t0 = time.perf_counter()
+            pos, path, _ = kp._put_prefix(runs, names, texts, midx)
+            t_read = time.perf_counter() - t0
+            prompt = [t for r in runs for t in r] + tt
+            drafter = Combined(StructureDrafter(eng, actions, key_orders(mod_texts), str_keys=string_keys(mod_texts)),
+                               phrasebook_drafter(eng, mod_texts, k=a.k), LookupDrafter(prompt, k=a.k))
+            text, st = generate(eng, first_token(eng, tt, pos), pos + len(tt), a.max_tokens, drafter)
+            st["read_s"] = round(t_read, 1)
+            st["path"] = path
+            res[(i, w)] = (time.perf_counter() - t0, text, st)
+            continue
         for k in [k for k, e in kp.cache.index.items() if not e.get("pinned")]:
             if k in kp.cache.index:
                 kp.cache._delete(k)                           # a first-time combination
@@ -121,9 +144,9 @@ for i, (need, extra, cmd) in enumerate(tests, 1):
         kp.cache._save_index()
 
     line = f"[{i}/{len(tests)}] {'+'.join(need)} (+{'+'.join(extra)}): full+extra {res[(i, 'full+extra')][0]:.1f}s"
-    for w in ["exact+pred", "fast+pred"]:
+    for w in ways:
         secs, text, st = res[(i, w)]
-        line += (f" | {w} {secs:.1f}s {'same' if norm(text) == norm(ref) else 'DIFF'} "
+        line += (f" | {w}{'(' + st['path'] + ')' if st.get('path') else ''} {secs:.1f}s {'same' if norm(text) == norm(ref) else 'DIFF'} "
                  f"[read {st['read_s']} | write {st['check_s']} | {st['tokens']}tok/{st['passes']}passes]")
     print(line + f"  — {cmd[:40]}", flush=True)
     print(f"  router said: {actions}   model wrote: {ACT.findall(ref)}", flush=True)
@@ -136,7 +159,9 @@ kp.cache._save_index()
 kp.close()
 
 print()
-for w in ["dump", "full+extra", "exact+pred", "fast+pred"]:
+for w in ["dump", "full+extra", "exact+pred", "fast+pred"] + (["hit+pred"] if a.full_hit else []):
+    if res.get((1, w)) is None:
+        continue
     ts = [res[(i, w)][0] for i in range(1, len(tests) + 1)]
     tpp = [res[(i, w)][2]["tokens"] / max(1, res[(i, w)][2]["passes"]) for i in range(1, len(tests) + 1)]
     same = sum(norm(res[(i, w)][1]) == norm(res[(i, "full+extra")][1]) for i in range(1, len(tests) + 1))
