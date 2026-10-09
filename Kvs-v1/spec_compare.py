@@ -96,6 +96,7 @@ for i, (mods, cmd) in enumerate(tests, 1):
                 if k in kp.cache.index:
                     kp.cache._delete(k)
         t0 = time.perf_counter()
+        t_read0 = t0
         if w == "fast+spec" and kp._can_stitch(runs, names, texts, midx):
             pos, path, _ = kp._put_prefix_fast(runs, names, texts, midx)
         else:
@@ -114,6 +115,7 @@ for i, (mods, cmd) in enumerate(tests, 1):
                 parts.append(phrasebook_drafter(eng, mod_texts, k=a.k))
             parts += [skeleton_drafter(eng, actions, k=a.k), LookupDrafter(prompt, k=a.k)]
         drafter = Combined(*parts)
+        t_read = time.perf_counter() - t_read0
         text, st = generate(eng, first, pos + len(tt), a.max_tokens, drafter)
         secs = time.perf_counter() - t0
         kp.cache._save_index()
@@ -123,7 +125,9 @@ for i, (mods, cmd) in enumerate(tests, 1):
         tpp[w].append(st["tokens"] / max(1, st["passes"]))
         paths[w][path] = paths[w].get(path, 0) + 1
         mark = "" if ok is None else (" same" if ok else " DIFF")
-        row.append(f"{w}({path}) {secs:.1f}s {st['tokens']}tok/{st['passes']}passes{mark}")
+        row.append(f"{w}({path}) {secs:.1f}s {st['tokens']}tok/{st['passes']}passes{mark} "
+                   f"[read {t_read:.1f} | draft {st['draft_s']:.1f} | check {st['check_s']:.1f} | "
+                   f"guessed {st['drafted']}, kept {st['accepted']}]")
         if a.show and ok is not True:
             print(f"  {w}:", norm(text))
     print(f"[{i}/{len(tests)}] {'+'.join(mods)}: " + " | ".join(row) + f"  — {cmd[:40]}", flush=True)

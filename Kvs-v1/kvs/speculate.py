@@ -146,13 +146,17 @@ def generate(eng: Engine, first: int, pos: int, max_tokens: int, drafter=None) -
     logits after the prompt), `pos` the position it goes to. With drafter=None this is plain
     greedy writing, one token per pass (the fair baseline: same code, same argmax).
     Returns (text, stats)."""
+    import time as _time
     out: list[int] = []
     t = first
     passes = drafted = accepted = 0
+    t_draft = t_check = 0.0
     eog = lambda x: lc.llama_vocab_is_eog(eng.vocab, x)
     while len(out) < max_tokens and not eog(t):
+        t0 = _time.perf_counter()
         draft = [d for d in (drafter(out + [t]) if drafter else []) if d >= 0]
         draft = draft[:max(0, max_tokens - len(out) - 1)]
+        t1 = _time.perf_counter()
         _decode_all(eng, [t] + draft, pos)
         passes += 1
         drafted += len(draft)
@@ -168,8 +172,11 @@ def generate(eng: Engine, first: int, pos: int, max_tokens: int, drafter=None) -
             lc.llama_memory_seq_rm(eng.mem, SEQ, pos + 1 + m, -1)
         pos += 1 + m
         t = nxt
+        t_draft += t1 - t0
+        t_check += _time.perf_counter() - t1
     text = eng.llm.detokenize(out, special=False).decode(errors="ignore")
-    return text, {"tokens": len(out), "passes": passes, "drafted": drafted, "accepted": accepted}
+    return text, {"tokens": len(out), "passes": passes, "drafted": drafted, "accepted": accepted,
+                  "draft_s": round(t_draft, 2), "check_s": round(t_check, 2)}
 
 
 # ---------------- structure predictor (v1) ----------------
