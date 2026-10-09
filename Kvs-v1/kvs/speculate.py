@@ -176,15 +176,16 @@ def generate(eng: Engine, first: int, pos: int, max_tokens: int, drafter=None) -
 _VALUE_END = re.compile(r'"([A-Za-z_]\w*)":\s*("(?:[^"\\]|\\.)*"|-?\d+(?:\.\d+)?|true|false|null|\[[^\[\]]*\]|\{\})$')
 
 
-def key_orders(module_texts: list[str]) -> dict[str, list[str]]:
-    """For each action: the param keys in the order its documented examples most often use them."""
+def key_orders(module_texts: list[str]) -> dict[str, list[list[str]]]:
+    """For each action: every param-key order its documented examples use, most common first.
+    (An action can have several forms: Rename(old_name, new_name, path) and Rename(source_path, clean).)"""
     from collections import Counter
     seqs: dict[str, Counter] = {}
     for st in example_steps(module_texts):
         p = st.get("params")
         if isinstance(p, dict):
             seqs.setdefault(st["action"], Counter())[tuple(p.keys())] += 1
-    return {a: list(c.most_common(1)[0][0]) for a, c in seqs.items()}
+    return {a: [list(t) for t, _ in c.most_common()] for a, c in seqs.items()}
 
 
 class StructureDrafter:
@@ -199,9 +200,14 @@ class StructureDrafter:
     def __init__(self, eng: Engine, actions: list[str], keys: dict[str, list[str]], k: int = 32):
         self.eng, self.actions, self.keys, self.k = eng, actions, keys, k
 
+    def _orders(self, action: str) -> list[list[str]]:
+        o = self.keys.get(action) or []
+        return o if (o and isinstance(o[0], list)) else ([o] if o else [])
+
     def _step_open(self, i: int) -> str:
         a = self.actions[i]
-        first = (self.keys.get(a) or [None])[0]
+        orders = self._orders(a)
+        first = orders[0][0] if orders and orders[0] else None
         s = '    {\n      "action": ' + json.dumps(a) + ',\n      "params": {'
         return s + ('\n        ' + json.dumps(first) + ': ' if first else '}')
 
@@ -233,10 +239,10 @@ class StructureDrafter:
             return ""
         last = text.rfind('"params"')
         used = re.findall(r'"([A-Za-z_]\w*)":', text[last + len('"params"'):]) if last >= 0 else []
-        order = self.keys.get(self.actions[step], [])
-        nxt = next((x for x in order if x not in used), None)
-        if nxt and (len(used) < len(order)):
-            return ",\n        " + json.dumps(nxt) + ": "
+        # the most common documented form that starts with the keys written so far
+        order = next((o for o in self._orders(self.actions[step]) if o[:len(used)] == used), None)
+        if order and len(used) < len(order):
+            return ",\n        " + json.dumps(order[len(used)]) + ": "
         tail = "\n      }\n    }"
         if step + 1 < len(self.actions):
             return tail + ",\n" + self._step_open(step + 1)
