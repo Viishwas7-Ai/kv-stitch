@@ -17,11 +17,18 @@ TMP = 1    # scratch, used only by speed mode to bring in a module's cells
 
 class Engine:
     def __init__(self, model_path: str, n_ctx: int = 8192, n_gpu_layers: int = -1,
-                 n_threads: int | None = None, verbose: bool = False):
+                 n_threads: int | None = None, verbose: bool = False, n_batch: int = 512,
+                 n_ubatch: int = 512, flash_attn: bool = False):
+        """n_batch / n_ubatch: how many prompt tokens are read per step (bigger can read faster
+        and uses a little more RAM). flash_attn: llama.cpp's flash attention. Both can change
+        the numbers slightly, so the cache keeps their caches apart (settings_tag)."""
         self.model_path = os.path.abspath(model_path)
         self.n_ctx = n_ctx
         self.llm = lc.Llama(model_path=model_path, n_ctx=n_ctx, n_gpu_layers=n_gpu_layers,
-                            n_threads=n_threads, logits_all=False, verbose=verbose)
+                            n_threads=n_threads, logits_all=False, verbose=verbose,
+                            n_batch=n_batch, n_ubatch=n_ubatch, flash_attn=flash_attn)
+        self.n_ubatch = self.llm.context_params.n_ubatch
+        self.flash_attn = flash_attn
         # own context: speed mode needs 2 sequences sharing one KV cache
         p = self.llm.context_params
         p.n_seq_max = 2
@@ -34,6 +41,10 @@ class Engine:
         self.vocab = lc.llama_model_get_vocab(self.llm._model.model)
         self.n_vocab = lc.llama_vocab_n_tokens(self.vocab)
         self.n_batch = self.llm.n_batch
+        # "" for the default settings, so caches built before these options keep matching
+        tag = ("fa" if flash_attn else "") + \
+            (f"b{self.n_batch}u{self.n_ubatch}" if (self.n_batch, self.n_ubatch) != (512, 512) else "")
+        self.settings_tag = tag
         atexit.register(self.close)   # Metal asserts at exit if a context is still alive
 
     # ---------- tokens and KV ----------

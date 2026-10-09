@@ -47,7 +47,8 @@ class PrefixCache:
         except (OSError, ValueError):
             self.index = {}
         mf = os.stat(eng.model_path)
-        self._model_tag = f"{eng.model_path}|{mf.st_size}|{int(mf.st_mtime)}|{eng.n_ctx}|"
+        self._model_tag = f"{eng.model_path}|{mf.st_size}|{int(mf.st_mtime)}|{eng.n_ctx}|" + \
+            (f"{eng.settings_tag}|" if getattr(eng, "settings_tag", "") else "")
 
     # ---------- files ----------
     def _p(self, name: str) -> str:

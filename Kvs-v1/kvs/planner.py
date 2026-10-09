@@ -72,7 +72,8 @@ def _safe(name: str) -> str:
 
 class KVPlanner:
     def __init__(self, models: dict[str, str] | None, cache_root: str, *, n_ctx: int = 8192,
-                 n_gpu_layers: int = -1, chat: bool = True, max_tokens: int = 600,
+                 n_gpu_layers: int = -1, n_batch: int = 512, n_ubatch: int = 512,
+                 flash_attn: bool = False, chat: bool = True, max_tokens: int = 600,
                  max_disk_mb: float | None = 3000, max_in_memory: int = 2,
                  versions_per_slot: int = 1, checkpoints: int = 2,
                  exact_only: set[str] | None = None,
@@ -81,6 +82,9 @@ class KVPlanner:
         models:      {"granite4:micro": "/path/to/gguf", ...}; a model not listed here is
                      looked up in Ollama's folder by name (ollama_blob)
         cache_root:  one sub-folder per model is made inside it
+        n_batch, n_ubatch, flash_attn: reading settings (see Engine). Any non-default setting
+                     gets its own cache folder (model_fa_b1024u1024), so the default caches are
+                     never replaced by them
         chat:        wrap the prompt in the model's chat template (as Ollama does)
         checkpoints: also save the start up to the first N modules on the way
         exact_only:  module names that always take the exact path, even when speed mode is
@@ -90,6 +94,7 @@ class KVPlanner:
         self.models = dict(models or {})
         self.cache_root = os.path.expanduser(cache_root)
         self.n_ctx, self.n_gpu_layers, self.chat = n_ctx, n_gpu_layers, chat
+        self.n_batch, self.n_ubatch, self.flash_attn = n_batch, n_ubatch, flash_attn
         self.max_tokens = max_tokens
         self.max_disk_mb, self.max_in_memory = max_disk_mb, max_in_memory
         self.versions_per_slot, self.checkpoints = versions_per_slot, checkpoints
@@ -108,9 +113,11 @@ class KVPlanner:
         self.close()
         path = self.models.get(model) or ollama_blob(model)
         log.info("kvs: loading %s", model)
-        self.eng = Engine(path, n_ctx=self.n_ctx, n_gpu_layers=self.n_gpu_layers)
+        self.eng = Engine(path, n_ctx=self.n_ctx, n_gpu_layers=self.n_gpu_layers, n_batch=self.n_batch,
+                          n_ubatch=self.n_ubatch, flash_attn=self.flash_attn)
         self.wrap = self.eng.chat_wrap() if self.chat else ("", "")
-        self.cache = PrefixCache(self.eng, os.path.join(self.cache_root, _safe(model)),
+        folder = _safe(model) + ("_" + self.eng.settings_tag if self.eng.settings_tag else "")
+        self.cache = PrefixCache(self.eng, os.path.join(self.cache_root, folder),
                                  max_in_memory=self.max_in_memory, max_disk_mb=self.max_disk_mb,
                                  versions_per_slot=self.versions_per_slot)
         self.model, self._tok = model, {}

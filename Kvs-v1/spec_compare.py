@@ -8,6 +8,11 @@ are the exact plans (= the full prompt's plans), used to check every plan here a
 router is assumed perfect, to give the drafter the right action order. Without --ref the
 action order comes from the modules (the first action each one documents).
 
+Reading settings (--n-batch, --n-ubatch, --flash-attn): each non-default setting gets its own
+cache folder, so build its first-run starts with --starts (already built ones are skipped).
+--ref stays the plans of the default settings: "same" then also says the setting did not
+change a single plan.
+
 Two ways, each timed end to end (reading + writing):
     exact+spec   Kvs exact path (cached start, rest read), then speculative writing
     fast+spec    Kvs speed mode (start + stitched modules), then speculative writing
@@ -45,6 +50,10 @@ ap.add_argument("--single", default="",
 ap.add_argument("--only", default="", help="comma list: run only these ways (exact+spec,fast+spec)")
 ap.add_argument("--limit", type=int, default=0, help="run only the first N tests")
 ap.add_argument("--show", action="store_true")
+ap.add_argument("--n-batch", type=int, default=512, help="prompt tokens read per step")
+ap.add_argument("--n-ubatch", type=int, default=512, help="prompt tokens computed at once (<= n-batch)")
+ap.add_argument("--flash-attn", action="store_true", help="llama.cpp flash attention")
+ap.add_argument("--starts", default="", help="comma list of modules to build as first-run starts, or 'all' (every module in the tests)")
 ap.add_argument("--keep-cached", action="store_true",
                 help="use whatever is cached; by default each test starts like a first-time "
                      "combination: unpinned caches (left from earlier tests) are removed first")
@@ -71,16 +80,27 @@ if a.limit:
 norm = lambda s: s.strip().replace("\n", " ")
 ACT = re.compile(r'"action"\s*:\s*"([^"]+)"')
 
-kp = KVPlanner({a.model: a.gguf} if a.gguf else {}, a.cache_root, n_ctx=a.n_ctx, max_tokens=a.max_tokens)
+kp = KVPlanner({a.model: a.gguf} if a.gguf else {}, a.cache_root, n_ctx=a.n_ctx, max_tokens=a.max_tokens,
+               n_batch=a.n_batch, n_ubatch=a.n_ubatch, flash_attn=a.flash_attn)
 print("loading model ...", flush=True)
 kp.load(a.model)
 eng = kp.eng
+print(f"settings: n_batch {eng.n_batch}, n_ubatch {eng.n_ubatch}, flash_attn {eng.flash_attn}   "
+      f"cache folder {kp.cache.dir}", flush=True)
+starts = sorted({m for mods, _ in tests for m in mods}) if a.starts == "all" else \
+    [x.strip() for x in a.starts.split(",") if x.strip()]
+for m in starts:
+    h, pcs, _ = builder.build([m], "")
+    first = next(i for i, p in enumerate(pcs) if len(p) > 2 and p[2])
+    kp.build_starts(a.model, h, [pcs[:first + 1]], progress=print)
+kp.cache._save_index()
 
 ways = [w.strip() for w in a.only.split(",") if w.strip()] or ["exact+spec", "fast+spec"]
 times = {w: [] for w in ways}
 same = {w: 0 for w in ways}
 tpp = {w: [] for w in ways}
 paths = {w: {} for w in ways}
+reads = {w: [] for w in ways}
 print(f"{len(tests)} tests x {len(ways)} way(s), drafter: {a.drafter}{' + phrasebook' if a.phrasebook else ''}. Each line prints when its test is done.\n", flush=True)
 for i, (mods, cmd) in enumerate(tests, 1):
     header, pieces, tail = builder.build(mods, cmd)
@@ -124,6 +144,7 @@ for i, (mods, cmd) in enumerate(tests, 1):
         times[w].append(secs)
         tpp[w].append(st["tokens"] / max(1, st["passes"]))
         paths[w][path] = paths[w].get(path, 0) + 1
+        reads[w].append(t_read)
         mark = "" if ok is None else (" same" if ok else " DIFF")
         row.append(f"{w}({path}) {secs:.1f}s {st['tokens']}tok/{st['passes']}passes{mark} "
                    f"[read {t_read:.1f} | draft {st['draft_s']:.1f} | check {st['check_s']:.1f} | "
@@ -136,6 +157,6 @@ print()
 for w in ways:
     s = f"same plan {same[w]}/{len(tests)}   " if refs else ""
     print(f"{w:10}: {s}median {stats.median(times[w]):.1f}s end to end   "
-          f"tokens per pass {stats.median(tpp[w]):.2f}   paths {paths[w]}")
+          f"read {stats.median(reads[w]):.1f}s   tokens per pass {stats.median(tpp[w]):.2f}   paths {paths[w]}")
 print("earlier run on these tests: no-cache 36.9s, exact 33.4s (20/20), speed 27.5s (9/20)")
 kp.close()
