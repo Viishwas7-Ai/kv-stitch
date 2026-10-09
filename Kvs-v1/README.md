@@ -22,6 +22,79 @@ Needs `llama-cpp-python` and `numpy`. Copy the `kvs` folder into the app, or add
 `sys.path`. That folder is everything the app needs; the `*.py` scripts next to it are only
 for testing.
 
+## Add it to your app, step by step
+
+**1. Copy and install.** Copy the `kvs/` folder into the app and `pip install llama-cpp-python numpy`.
+Nothing else is needed at run time.
+
+| File in `kvs/` | What it does |
+|---|---|
+| `planner.py` | `KVPlanner`, the only class the app talks to: `plan()`, `build_starts()`, `add_workflows()` |
+| `engine.py` | loads the model in llama.cpp; reads tokens, saves/loads the KV cache, writes |
+| `cache.py` | the cache folder on disk: what is stored, finding it again, deleting old/unused entries |
+| `speculate.py` | speculative writing: the structure predictor and the other guessers, and the check loop |
+| `workflows.py` | reads a workflows file (`name: MOD_A, MOD_B`) for `add_workflows()` |
+
+The scripts next to `kvs/` (`check.py`, `spec_compare.py`, ...) are only for testing on your
+own prompts; the app does not need them.
+
+**2. Make one planner when the app starts.**
+
+```python
+from kvs import KVPlanner
+
+kp = KVPlanner(
+    models={},                       # empty: the model is found in Ollama's folder by name
+    cache_root="~/Library/Application Support/MyApp/kvs",
+    max_disk_mb=3000,                # disk limit for the cache; least used unpinned goes first
+    exact_only={"DELETE", "RENAME", "FILES"},
+    fallback=lambda model, prompt: my_ollama_call(model, prompt),
+)
+```
+
+| Setting | Default | What it does |
+|---|---|---|
+| `models` | `{}` | `{"name": "/path/model.gguf"}`; a name not listed is looked up in Ollama's folder |
+| `cache_root` | | where the cache folder goes (one sub-folder per model) |
+| `max_disk_mb` | 3000 | disk limit; over it, the least recently used **unpinned** entries are deleted |
+| `max_in_memory` | 2 | how many cache entries stay in RAM (keep it small on 8 GB) |
+| `checkpoints` | 2 | after a new combination, also save its start up to the 1st and 2nd module |
+| `spec` | `True` | speculative writing: the same plan in fewer passes. Leave on |
+| `spec_k` | 12 | tokens guessed per pass |
+| `exact_only` | none | modules for which speed mode is never used (destructive ones) |
+| `fallback` | none | your old model call; used if anything in Kvs fails, so a plan always comes back |
+| `n_batch`, `n_ubatch`, `flash_attn` | 512, 512, off | reading settings; each non-default setting gets its own cache folder |
+| `max_tokens` | 600 | longest plan |
+
+**3. On every launch, build the starts** (in the background; only the first launch, or after a
+module text changed, really builds anything; the rest is skipped in a moment):
+
+```python
+for m in CORE_MODULES:
+    header, pieces, _ = build_prompt([m], "")
+    first = next(i for i, p in enumerate(pieces) if len(p) > 2 and p[2])
+    kp.build_starts(MODEL, header, [pieces[:first + 1]])
+```
+
+**4. Replace the model call with `kp.plan()`:**
+
+```python
+header, pieces, tail = build_prompt(modules_from_router, user_command)
+res = kp.plan(MODEL, header, pieces, tail)
+plan_text = res.text      # exactly what the model writes for the full prompt
+res.path                  # full / partial / miss / fallback: how much was cached
+```
+
+**Rules that keep it working**
+- Anything that changes per request (date, user, context, the command) goes in `tail`. One
+  changed character in `header` or `pieces` and the cache no longer matches (it still works,
+  just slower).
+- Leave speed mode off (`fast=False`, the default): it is faster but changes plans.
+- Do not keep the same model loaded in Ollama at the same time: two copies do not fit in 8 GB.
+  Ollama is only the fallback.
+- `stop=` strings switch writing back to plain (one token per pass).
+- To start the cache over, delete the model's folder inside `cache_root`.
+
 ## How a request runs
 
 The router picks the model; the app's builder makes the prompt in pieces:
