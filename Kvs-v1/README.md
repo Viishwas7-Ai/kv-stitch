@@ -63,7 +63,7 @@ kp = KVPlanner(
 | `spec_k` | 12 | tokens guessed per pass |
 | `exact_only` | none | modules for which speed mode is never used (destructive ones) |
 | `fallback` | none | your old model call; used if anything in Kvs fails, so a plan always comes back |
-| `n_batch`, `n_ubatch`, `flash_attn` | 512, 512, off | reading settings; each non-default setting gets its own cache folder |
+| `n_batch`, `n_ubatch`, `flash_attn` | 1024, 1024, on | reading settings (fastest, same plans: see v2 benchmark); each setting gets its own cache folder |
 | `max_tokens` | 600 | longest plan |
 
 **3. On every launch, build the starts** (in the background; only the first launch, or after a
@@ -115,7 +115,7 @@ kp = KVPlanner(
     fallback=lambda model, prompt: ollama_call(model, prompt),   # used if anything fails
     exact_only={"DELETE", "RENAME", "FILES"},    # these modules never use speed mode
     # spec=True (default): speculative writing with the structure predictor, same plan
-    # n_batch / n_ubatch / flash_attn: reading settings, defaults 512 / 512 / off
+    # n_batch / n_ubatch / flash_attn: reading settings, defaults 1024 / 1024 / on
 )
 
 res = kp.plan(model_from_router, header, pieces, tail)
@@ -251,6 +251,27 @@ the plan's layout, tried before the skeleton and the prompt. Same 8 first tests,
 
 Half the passes for the same plans. The time falls less than the passes, because each pass now
 checks up to 12 guessed tokens and reading the prompt is part of the time.
+
+## v2 benchmark: reading settings + structure predictor
+
+Same machine, model and 20 commands; each a first-time combination (`partial` path from the
+pinned first-run starts). Exact path + speculative writing with the structure predictor,
+phrasebook and prompt lookup. `spec_compare.py`, end to end. "Same plan" is checked against the
+plans of the plain full prompt at llama.cpp's default settings, so 20/20 also means the setting
+did not change a single plan.
+
+| Reading settings | Median per command | Reading | Same plan | Tokens per pass |
+|---|---|---|---|---|
+| 512 / 512, flash attention off | 24.2 s | 19.7 s | 20/20 | 5.47 |
+| 1024 / 1024, off | 25.5 s | 20.5 s | 20/20 | 5.47 |
+| 512 / 512, flash attention on | 23.7 s | 19.2 s | 20/20 | 5.47 |
+| **1024 / 1024, flash attention on (default)** | **21.6 s** | **17.8 s** | **20/20** | 5.47 |
+
+- The whole way on first-time combinations: **36.9 s (no cache) → 21.6 s, every plan exact.**
+- Writing is now 2–9 s per command (5.47 tokens per pass, from 2.09 in v1.5); reading is most
+  of what is left.
+- A repeated command (whole prompt cached, `full`) on 3 four-module commands with 2 extra
+  modules from the router: 49.7–74.0 s with no cache → **7.6–12.7 s**, same plans.
 
 ## The whole way: all modules, no cache → router + Kvs
 

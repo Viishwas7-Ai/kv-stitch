@@ -76,7 +76,7 @@ def test_one_folder_per_model(kp, tmp_path):
     kp.models["tiny2"] = MODEL
     kp.build("tiny", HEADER, [GLUE, CREATE])
     kp.build("tiny2", HEADER, [GLUE, CREATE])
-    assert sorted(os.listdir(tmp_path)) == ["tiny", "tiny2"]
+    assert sorted(n.split("_")[0] for n in os.listdir(tmp_path)) == ["tiny", "tiny2"]
 
 
 def test_workflows(kp):

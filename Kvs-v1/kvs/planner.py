@@ -78,8 +78,8 @@ def _safe(name: str) -> str:
 
 class KVPlanner:
     def __init__(self, models: dict[str, str] | None, cache_root: str, *, n_ctx: int = 8192,
-                 n_gpu_layers: int = -1, n_batch: int = 512, n_ubatch: int = 512,
-                 flash_attn: bool = False, chat: bool = True, max_tokens: int = 600,
+                 n_gpu_layers: int = -1, n_batch: int = 1024, n_ubatch: int = 1024,
+                 flash_attn: bool = True, chat: bool = True, max_tokens: int = 600,
                  max_disk_mb: float | None = 3000, max_in_memory: int = 2,
                  versions_per_slot: int = 1, checkpoints: int = 2,
                  exact_only: set[str] | None = None, spec: bool = True, spec_k: int = 12,
@@ -88,7 +88,9 @@ class KVPlanner:
         models:      {"granite4:micro": "/path/to/gguf", ...}; a model not listed here is
                      looked up in Ollama's folder by name (ollama_blob)
         cache_root:  one sub-folder per model is made inside it
-        n_batch, n_ubatch, flash_attn: reading settings (see Engine). Any non-default setting
+        n_batch, n_ubatch, flash_attn: reading settings (see Engine). Default 1024/1024/on: the
+                     fastest on an 8 GB M3, same plans (README, v2). Any setting other than
+                     llama.cpp's own (512/512/off)
                      gets its own cache folder (model_fa_b1024u1024), so the default caches are
                      never replaced by them
         chat:        wrap the prompt in the model's chat template (as Ollama does)
