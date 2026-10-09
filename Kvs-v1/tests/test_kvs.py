@@ -198,14 +198,17 @@ def test_phrasebook_finds_documented_steps():
 def test_structure_predictor_guesses_only_the_fixed_parts():
     import json
     from kvs.speculate import StructureDrafter
-    keys = {"WebAction": ["query"], "NotesAction": ["mode", "title", "text"]}
-    d = StructureDrafter(None, ["WebAction", "NotesAction"], keys)
+    keys = {"WebAction": [["query"]], "NotesAction": [["mode", "title", "text"]]}
+    strs = {"WebAction": {"query"}, "NotesAction": {"mode", "title", "text"}}
+    d = StructureDrafter(None, ["WebAction", "NotesAction"], keys, str_keys=strs)
     plan = json.dumps({"plan": [{"action": "WebAction", "params": {"query": "q"}},
                                 {"action": "NotesAction", "params": {"mode": "create", "title": "t", "text": "x"}}]},
                       indent=2)
-    assert plan.startswith(d.guess(""))                                    # opening + first key
+    g = d.guess("")
+    assert plan.startswith(g) and g.endswith('"query": "')                  # one param: into the value
     i = plan.index('"q"') + 3
-    assert plan[i:].startswith(d.guess(plan[:i]))                          # close step 1, open step 2
+    g = d.guess(plan[:i])
+    assert plan[i:].startswith(g) and g.endswith('"params": {')             # several params: stop here
     i = plan.index('"create"') + 8
-    assert d.guess(plan[:i]) == ',\n        "title": '                    # next key
-    assert d.guess(plan[:plan.index('"q"') + 1]) == ""                     # inside a value: no guess
+    assert d.guess(plan[:i]) == ',\n        "title": "'                    # next key + its quote
+    assert d.guess(plan[:plan.index('"q"') + 2]) == ""                     # inside a value: no guess

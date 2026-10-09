@@ -188,6 +188,17 @@ def key_orders(module_texts: list[str]) -> dict[str, list[list[str]]]:
     return {a: [list(t) for t, _ in c.most_common()] for a, c in seqs.items()}
 
 
+def string_keys(module_texts: list[str]) -> dict[str, set[str]]:
+    """For each action: the param keys whose documented values are always strings."""
+    kinds: dict[str, dict[str, set]] = {}
+    for st in example_steps(module_texts):
+        p = st.get("params")
+        if isinstance(p, dict):
+            for k, v in p.items():
+                kinds.setdefault(st["action"], {}).setdefault(k, set()).add(type(v).__name__)
+    return {a: {k for k, t in ks.items() if t == {"str"}} for a, ks in kinds.items()}
+
+
 class StructureDrafter:
     """Predicts the fixed parts of the plan and leaves the values to the model.
 
@@ -197,19 +208,39 @@ class StructureDrafter:
     opening the next one (or closing the plan). Values are never guessed. Layout: json indent=2,
     the way the model writes plans."""
 
-    def __init__(self, eng: Engine, actions: list[str], keys: dict[str, list[str]], k: int = 32):
+    def __init__(self, eng: Engine, actions: list[str], keys: dict, k: int = 32,
+                 str_keys: dict[str, set[str]] | None = None, single: set[str] | None = None):
+        """single: actions to treat as one-param even if the docs show more (hand-marked)."""
         self.eng, self.actions, self.keys, self.k = eng, actions, keys, k
+        self.str_keys = str_keys or {}
+        self.single = set(single or ())
 
     def _orders(self, action: str) -> list[list[str]]:
         o = self.keys.get(action) or []
         return o if (o and isinstance(o[0], list)) else ([o] if o else [])
 
+    def _one_key(self, action: str) -> str | None:
+        """The key, if every documented form of this action uses exactly that one key."""
+        forms = self._orders(action)
+        if action in self.single and forms and forms[0]:
+            return forms[0][0]
+        keys = {tuple(f) for f in forms}
+        return forms[0][0] if len(keys) == 1 and len(forms[0]) == 1 else None
+
+    def _q(self, action: str, key: str) -> str:
+        """Open the value's quote too when that key's documented values are always strings."""
+        return '"' if key in self.str_keys.get(action, ()) else ""
+
     def _step_open(self, i: int) -> str:
         a = self.actions[i]
-        orders = self._orders(a)
-        first = orders[0][0] if orders and orders[0] else None
         s = '    {\n      "action": ' + json.dumps(a) + ',\n      "params": {'
-        return s + ('\n        ' + json.dumps(first) + ': ' if first else '}')
+        forms = self._orders(a)
+        if not forms or all(not f for f in forms):
+            return s + '}'                                   # documented with empty params only
+        one = self._one_key(a)
+        if one:                                              # certain: go into the value
+            return s + '\n        ' + json.dumps(one) + ': ' + self._q(a, one)
+        return s                                             # several keys: the model picks the first
 
     def _text(self, out: list[int]) -> str:
         return self.eng.llm.detokenize(out, special=False).decode(errors="ignore")
@@ -242,7 +273,8 @@ class StructureDrafter:
         # the most common documented form that starts with the keys written so far
         order = next((o for o in self._orders(self.actions[step]) if o[:len(used)] == used), None)
         if order and len(used) < len(order):
-            return ",\n        " + json.dumps(order[len(used)]) + ": "
+            nk = order[len(used)]
+            return ",\n        " + json.dumps(nk) + ": " + self._q(self.actions[step], nk)
         tail = "\n      }\n    }"
         if step + 1 < len(self.actions):
             return tail + ",\n" + self._step_open(step + 1)

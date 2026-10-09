@@ -23,7 +23,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kvs import KVPlanner  # noqa: E402
 from kvs.speculate import (Combined, LookupDrafter, StructureDrafter, generate, key_orders,  # noqa: E402
-                           phrasebook_drafter, skeleton_drafter)
+                           phrasebook_drafter, skeleton_drafter, string_keys)
 
 ap = argparse.ArgumentParser()
 ap.add_argument("model")
@@ -40,6 +40,8 @@ ap.add_argument("--phrasebook", action="store_true",
 ap.add_argument("--drafter", default="lookup", choices=["lookup", "structure", "structure+lookup"],
                 help="lookup = phrasebook/skeleton/prompt lookup; structure = the structure predictor "
                      "only; structure+lookup = structure first, then the lookups")
+ap.add_argument("--single", default="",
+                help="comma list of actions to treat as one-param (predict into the value) by hand")
 ap.add_argument("--only", default="", help="comma list: run only these ways (exact+spec,fast+spec)")
 ap.add_argument("--limit", type=int, default=0, help="run only the first N tests")
 ap.add_argument("--show", action="store_true")
@@ -105,7 +107,8 @@ for i, (mods, cmd) in enumerate(tests, 1):
         mod_texts = [p[1] for p in pieces if len(p) > 2 and p[2]]
         parts = []
         if a.drafter.startswith("structure"):
-            parts.append(StructureDrafter(eng, actions, key_orders(mod_texts)))
+            parts.append(StructureDrafter(eng, actions, key_orders(mod_texts), str_keys=string_keys(mod_texts),
+                                          single={x.strip() for x in a.single.split(",") if x.strip()}))
         if a.drafter != "structure":
             if a.phrasebook:
                 parts.append(phrasebook_drafter(eng, mod_texts, k=a.k))
