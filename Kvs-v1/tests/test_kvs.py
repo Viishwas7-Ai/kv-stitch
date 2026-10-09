@@ -228,3 +228,13 @@ def test_structure_predictor_resyncs_on_extra_modules():
     full = t[:end]
     d2 = StructureDrafter(None, ["WebAction", "ZipAction", "NotesAction", "ZipAction"], keys)
     assert '"ZipAction"' in d2.guess(full + ',\n        "title": "t",\n        "text": "x"')  # extra at the end: guessed, model may close
+
+
+def test_plan_spec_default_gives_the_plain_plan(tmp_path):
+    a = KVPlanner({"tiny": MODEL}, str(tmp_path / "a"), n_ctx=2048, n_gpu_layers=0, chat=False, max_tokens=40)
+    b = KVPlanner({"tiny": MODEL}, str(tmp_path / "b"), n_ctx=2048, n_gpu_layers=0, chat=False, max_tokens=40,
+                  spec=False)
+    for pieces in ([GLUE, CREATE, NOTES, RULES], [GLUE, NOTES, ZIP, RULES]):
+        ra, rb = a.plan("tiny", HEADER, pieces, TAIL), b.plan("tiny", HEADER, pieces, TAIL)
+        assert ra.text == rb.text and ra.detail["passes"] <= ra.detail["gen_tokens"]
+        a.close(), b.close()

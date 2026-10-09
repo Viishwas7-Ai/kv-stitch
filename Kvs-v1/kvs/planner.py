@@ -26,6 +26,11 @@ After a partial or a miss the whole prefix is saved, plus the start up to the fi
 second module, so later requests that share that start reuse it. A changed text (module,
 rule, base prompt) gets a new cache and the old version is deleted.
 
+Writing is speculative by default (spec=True): the structure predictor (action order from the
+modules, key orders from their docs), the docs' step examples and the prompt guess the next
+tokens; the model checks them in one pass and keeps only what it would write itself. The
+plan is identical to plain writing, in fewer passes.
+
 First run: build_starts() / add_workflows() build and pin what the app knows it will need.
 """
 from __future__ import annotations
@@ -38,6 +43,7 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from .cache import PrefixCache
+from . import speculate as _spec
 from .engine import Engine
 from .workflows import Workflow
 
@@ -76,7 +82,7 @@ class KVPlanner:
                  flash_attn: bool = False, chat: bool = True, max_tokens: int = 600,
                  max_disk_mb: float | None = 3000, max_in_memory: int = 2,
                  versions_per_slot: int = 1, checkpoints: int = 2,
-                 exact_only: set[str] | None = None,
+                 exact_only: set[str] | None = None, spec: bool = True, spec_k: int = 12,
                  fallback: Callable[[str, str], str] | None = None):
         """
         models:      {"granite4:micro": "/path/to/gguf", ...}; a model not listed here is
@@ -89,6 +95,7 @@ class KVPlanner:
         checkpoints: also save the start up to the first N modules on the way
         exact_only:  module names that always take the exact path, even when speed mode is
                      asked for (e.g. {"DELETE", "RENAME", "FILES"}: a wrong step is costly)
+        spec:        speculative writing (same plan, fewer passes); spec_k guesses per pass
         fallback:    fallback(model_name, prompt_text) -> plan text, used if anything fails
         """
         self.models = dict(models or {})
@@ -100,6 +107,7 @@ class KVPlanner:
         self.versions_per_slot, self.checkpoints = versions_per_slot, checkpoints
         self.fallback = fallback
         self.exact_only = set(exact_only or ())
+        self.spec, self.spec_k = spec, spec_k
         self.model: str | None = None
         self.eng: Engine | None = None
         self.cache: PrefixCache | None = None
@@ -242,7 +250,14 @@ class KVPlanner:
             t_prompt = time.perf_counter()
             tt = self._t(tail + self.wrap[1])
             logits = self.eng.decode(tt, pos, want_last=True)
-            text, n_gen = self.eng.generate(logits, pos + len(tt), self.max_tokens, stop)
+            if self.spec and not stop:
+                first = max(range(len(logits)), key=logits.__getitem__)
+                drafter = self._drafter(pieces, runs, tt)
+                text, st = _spec.generate(self.eng, first, pos + len(tt), self.max_tokens, drafter)
+                n_gen = st["tokens"]
+                info.update(passes=st["passes"])
+            else:                                    # stop strings: plain writing
+                text, n_gen = self.eng.generate(logits, pos + len(tt), self.max_tokens, stop)
             info.update(prompt_s=round(t_prompt - t0, 2), gen_tokens=n_gen,
                         total_s=round(time.perf_counter() - t0, 2))
             self.cache._save_index()
@@ -253,6 +268,15 @@ class KVPlanner:
                 raise
             text = self.fallback(model, header + "".join(p[1] for p in pieces) + tail)
             return PlanResult(text, "fallback", time.perf_counter() - t0, {"error": repr(e)})
+
+    def _drafter(self, pieces: list[Piece], runs: list[list[int]], tail_tokens: list[int]):
+        """Structure predictor first, then the docs' step examples, then the prompt itself."""
+        mod_texts = [p[1] for p in pieces if len(p) > 2 and p[2]]
+        return _spec.Combined(
+            _spec.StructureDrafter(self.eng, _spec.module_actions(mod_texts), _spec.key_orders(mod_texts),
+                                   str_keys=_spec.string_keys(mod_texts)),
+            _spec.phrasebook_drafter(self.eng, mod_texts, k=self.spec_k),
+            _spec.LookupDrafter([t for r in runs for t in r] + tail_tokens, k=self.spec_k))
 
     def build(self, model: str, header: str, pieces: list[Piece], pin: bool = True) -> bool:
         """Build and keep the cache for exactly this prefix. Returns True if it was built,

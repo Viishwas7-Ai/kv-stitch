@@ -18,7 +18,9 @@ Kvs-v1/
   tests/test_kvs.py  every cached path checked against the plain full prompt
 ```
 
-Needs `llama-cpp-python`. Copy the `kvs` folder into the app, or add `Kvs-v1` to `sys.path`.
+Needs `llama-cpp-python` and `numpy`. Copy the `kvs` folder into the app, or add `Kvs-v1` to
+`sys.path`. That folder is everything the app needs; the `*.py` scripts next to it are only
+for testing.
 
 ## How a request runs
 
@@ -39,12 +41,14 @@ kp = KVPlanner(
     max_disk_mb=3000,
     fallback=lambda model, prompt: ollama_call(model, prompt),   # used if anything fails
     exact_only={"DELETE", "RENAME", "FILES"},    # these modules never use speed mode
+    # spec=True (default): speculative writing with the structure predictor, same plan
+    # n_batch / n_ubatch / flash_attn: reading settings, defaults 512 / 512 / off
 )
 
 res = kp.plan(model_from_router, header, pieces, tail)
 res.text      # the plan text, exactly what the model writes for the full prompt
 res.path      # full | partial | miss | fast | fallback
-res.detail    # cached_pieces, prompt_s, gen_tokens, total_s, removed_old
+res.detail    # cached_pieces, prompt_s, gen_tokens, passes, total_s, removed_old
 ```
 
 | Path | When | Cost |
