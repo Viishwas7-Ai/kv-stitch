@@ -195,6 +195,18 @@ def key_orders(module_texts: list[str]) -> dict[str, list[list[str]]]:
     return {a: [list(t) for t, _ in c.most_common()] for a, c in seqs.items()}
 
 
+def module_actions(module_texts: list[str]) -> list[str]:
+    """One action per module, in module order: the action the module documents most often.
+    (What the router's module list turns into when no plan is known yet.)"""
+    from collections import Counter
+    out = []
+    for t in module_texts:
+        c = Counter(st["action"] for st in example_steps([t]))
+        if c:
+            out.append(c.most_common(1)[0][0])
+    return out
+
+
 def string_keys(module_texts: list[str]) -> dict[str, set[str]]:
     """For each action: the param keys whose documented values are always strings."""
     kinds: dict[str, dict[str, set]] = {}
@@ -238,8 +250,7 @@ class StructureDrafter:
         """Open the value's quote too when that key's documented values are always strings."""
         return '"' if key in self.str_keys.get(action, ()) else ""
 
-    def _step_open(self, i: int) -> str:
-        a = self.actions[i]
+    def _step_open(self, a: str) -> str:
         s = '    {\n      "action": ' + json.dumps(a) + ',\n      "params": {'
         forms = self._orders(a)
         if not forms or all(not f for f in forms):
@@ -269,25 +280,34 @@ class StructureDrafter:
         return ""
 
     def _guess_at(self, text: str) -> str:
-        opening = '{\n  "plan": [\n' + self._step_open(0)
+        opening = '{\n  "plan": [\n' + self._step_open(self.actions[0])
         if len(text) < len(opening) and opening.startswith(text):
             return opening[len(text):]
         m = _VALUE_END.search(text)
         if not m:
             return ""
-        step = text.count('"action"') - 1
-        if step < 0 or step >= len(self.actions):
+        written = re.findall(r'"action":\s*"([^"]+)"', text)
+        if not written:
             return ""
+        # RE-SYNC with what the model actually wrote. The router may list extra modules or a
+        # module may give another of its actions: walk the written actions along the expected
+        # list; a written action found further on skips the ones before it (they were extra),
+        # one not in the list takes a slot of its own.
+        ptr = -1
+        for w in written:
+            j = next((i for i in range(ptr + 1, len(self.actions)) if self.actions[i] == w), None)
+            ptr = j if j is not None else ptr + 1
+        cur = written[-1]
         last = text.rfind('"params"')
         used = re.findall(r'"([A-Za-z_]\w*)":', text[last + len('"params"'):]) if last >= 0 else []
         # the most common documented form that starts with the keys written so far
-        order = next((o for o in self._orders(self.actions[step]) if o[:len(used)] == used), None)
+        order = next((o for o in self._orders(cur) if o[:len(used)] == used), None)
         if order and len(used) < len(order):
             nk = order[len(used)]
-            return ",\n        " + json.dumps(nk) + ": " + self._q(self.actions[step], nk)
+            return ",\n        " + json.dumps(nk) + ": " + self._q(cur, nk)
         tail = "\n      }\n    }"
-        if step + 1 < len(self.actions):
-            return tail + ",\n" + self._step_open(step + 1)
+        if ptr + 1 < len(self.actions):
+            return tail + ",\n" + self._step_open(self.actions[ptr + 1])
         return tail + "\n  ]\n}"
 
     def __call__(self, out: list[int]) -> list[int]:

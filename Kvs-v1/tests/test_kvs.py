@@ -212,3 +212,19 @@ def test_structure_predictor_guesses_only_the_fixed_parts():
     i = plan.index('"create"') + 8
     assert d.guess(plan[:i]) == ',\n        "title": "'                    # next key + its quote
     assert d.guess(plan[:plan.index('"q"') + 2]) == ""                     # inside a value: no guess
+
+
+def test_structure_predictor_resyncs_on_extra_modules():
+    import json
+    from kvs.speculate import StructureDrafter
+    keys = {"WebAction": [["query"]], "ZipAction": [["target"]], "NotesAction": [["mode", "title", "text"]]}
+    # the router listed ZipAction (extra) between the two real steps
+    d = StructureDrafter(None, ["WebAction", "ZipAction", "NotesAction"], keys)
+    t = json.dumps({"plan": [{"action": "WebAction", "params": {"query": "q"}},
+                             {"action": "NotesAction", "params": {"mode": "create"}}]}, indent=2)
+    i = t.index('"create"') + 8
+    assert d.guess(t[:i]) == ',\n        "title": '                    # follows NotesAction, not Zip
+    end = t.index('"create"') + 8
+    full = t[:end]
+    d2 = StructureDrafter(None, ["WebAction", "ZipAction", "NotesAction", "ZipAction"], keys)
+    assert '"ZipAction"' in d2.guess(full + ',\n        "title": "t",\n        "text": "x"')  # extra at the end: guessed, model may close
