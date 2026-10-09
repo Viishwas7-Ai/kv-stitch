@@ -237,10 +237,13 @@ class StructureDrafter:
         forms = self._orders(a)
         if not forms or all(not f for f in forms):
             return s + '}'                                   # documented with empty params only
-        one = self._one_key(a)
-        if one:                                              # certain: go into the value
-            return s + '\n        ' + json.dumps(one) + ': ' + self._q(a, one)
-        return s                                             # several keys: the model picks the first
+        # Guess the most common form's first key even when other forms exist: a wrong guess costs
+        # almost nothing (checked in the pass the model needs anyway), a guess not made is a sure
+        # loss. If the model starts a different form, the next keys follow that form.
+        first = self._one_key(a) or next((f[0] for f in forms if f), None)
+        if not first:
+            return s
+        return s + '\n        ' + json.dumps(first) + ': ' + self._q(a, first)
 
     def _text(self, out: list[int]) -> str:
         return self.eng.llm.detokenize(out, special=False).decode(errors="ignore")

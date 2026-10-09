@@ -208,7 +208,7 @@ def test_structure_predictor_guesses_only_the_fixed_parts():
     assert plan.startswith(g) and g.endswith('"query": "')                  # one param: into the value
     i = plan.index('"q"') + 3
     g = d.guess(plan[:i])
-    assert plan[i:].startswith(g) and g.endswith('"params": {')             # several params: stop here
+    assert plan[i:].startswith(g) and g.endswith('"mode": "')              # several params: guess the first
     i = plan.index('"create"') + 8
     assert d.guess(plan[:i]) == ',\n        "title": "'                    # next key + its quote
     assert d.guess(plan[:plan.index('"q"') + 2]) == ""                     # inside a value: no guess
