@@ -22,7 +22,8 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kvs import KVPlanner  # noqa: E402
-from kvs.speculate import Combined, LookupDrafter, generate, phrasebook_drafter, skeleton_drafter  # noqa: E402
+from kvs.speculate import (Combined, LookupDrafter, StructureDrafter, generate, key_orders,  # noqa: E402
+                           phrasebook_drafter, skeleton_drafter)
 
 ap = argparse.ArgumentParser()
 ap.add_argument("model")
@@ -36,6 +37,9 @@ ap.add_argument("--max-tokens", type=int, default=400)
 ap.add_argument("--k", type=int, default=12, help="tokens guessed per pass")
 ap.add_argument("--phrasebook", action="store_true",
                 help="also draft from every step example in the module docs, in the plan's layout")
+ap.add_argument("--drafter", default="lookup", choices=["lookup", "structure", "structure+lookup"],
+                help="lookup = phrasebook/skeleton/prompt lookup; structure = the structure predictor "
+                     "only; structure+lookup = structure first, then the lookups")
 ap.add_argument("--only", default="", help="comma list: run only these ways (exact+spec,fast+spec)")
 ap.add_argument("--limit", type=int, default=0, help="run only the first N tests")
 ap.add_argument("--show", action="store_true")
@@ -75,7 +79,7 @@ times = {w: [] for w in ways}
 same = {w: 0 for w in ways}
 tpp = {w: [] for w in ways}
 paths = {w: {} for w in ways}
-print(f"{len(tests)} tests x {len(ways)} way(s){' + phrasebook' if a.phrasebook else ''}. Each line prints when its test is done.\n", flush=True)
+print(f"{len(tests)} tests x {len(ways)} way(s), drafter: {a.drafter}{' + phrasebook' if a.phrasebook else ''}. Each line prints when its test is done.\n", flush=True)
 for i, (mods, cmd) in enumerate(tests, 1):
     header, pieces, tail = builder.build(mods, cmd)
     runs, names, texts, midx = kp._runs(header, pieces)
@@ -98,9 +102,14 @@ for i, (mods, cmd) in enumerate(tests, 1):
         logits = eng.decode(tt, pos, want_last=True)
         first = max(range(len(logits)), key=logits.__getitem__)
         prompt = [t for r in runs for t in r] + tt
-        parts = [skeleton_drafter(eng, actions, k=a.k), LookupDrafter(prompt, k=a.k)]
-        if a.phrasebook:
-            parts.insert(0, phrasebook_drafter(eng, [p[1] for p in pieces if len(p) > 2 and p[2]], k=a.k))
+        mod_texts = [p[1] for p in pieces if len(p) > 2 and p[2]]
+        parts = []
+        if a.drafter.startswith("structure"):
+            parts.append(StructureDrafter(eng, actions, key_orders(mod_texts)))
+        if a.drafter != "structure":
+            if a.phrasebook:
+                parts.append(phrasebook_drafter(eng, mod_texts, k=a.k))
+            parts += [skeleton_drafter(eng, actions, k=a.k), LookupDrafter(prompt, k=a.k)]
         drafter = Combined(*parts)
         text, st = generate(eng, first, pos + len(tt), a.max_tokens, drafter)
         secs = time.perf_counter() - t0

@@ -16,6 +16,7 @@ Drafters (no training, no second model):
 from __future__ import annotations
 
 import json
+import re
 
 import llama_cpp as lc
 import numpy as np
@@ -169,3 +170,78 @@ def generate(eng: Engine, first: int, pos: int, max_tokens: int, drafter=None) -
         t = nxt
     text = eng.llm.detokenize(out, special=False).decode(errors="ignore")
     return text, {"tokens": len(out), "passes": passes, "drafted": drafted, "accepted": accepted}
+
+
+# ---------------- structure predictor (v1) ----------------
+_VALUE_END = re.compile(r'"([A-Za-z_]\w*)":\s*("(?:[^"\\]|\\.)*"|-?\d+(?:\.\d+)?|true|false|null|\[[^\[\]]*\]|\{\})$')
+
+
+def key_orders(module_texts: list[str]) -> dict[str, list[str]]:
+    """For each action: the param keys in the order its documented examples most often use them."""
+    from collections import Counter
+    seqs: dict[str, Counter] = {}
+    for st in example_steps(module_texts):
+        p = st.get("params")
+        if isinstance(p, dict):
+            seqs.setdefault(st["action"], Counter())[tuple(p.keys())] += 1
+    return {a: list(c.most_common(1)[0][0]) for a, c in seqs.items()}
+
+
+class StructureDrafter:
+    """Predicts the fixed parts of the plan and leaves the values to the model.
+
+    Knows the action order (from the router) and each action's usual param keys (from the
+    docs). From the text written so far it works out where it is and guesses the next fixed
+    piece: the opening and the first step, the next key after a value, or closing the step and
+    opening the next one (or closing the plan). Values are never guessed. Layout: json indent=2,
+    the way the model writes plans."""
+
+    def __init__(self, eng: Engine, actions: list[str], keys: dict[str, list[str]], k: int = 32):
+        self.eng, self.actions, self.keys, self.k = eng, actions, keys, k
+
+    def _step_open(self, i: int) -> str:
+        a = self.actions[i]
+        first = (self.keys.get(a) or [None])[0]
+        s = '    {\n      "action": ' + json.dumps(a) + ',\n      "params": {'
+        return s + ('\n        ' + json.dumps(first) + ': ' if first else '}')
+
+    def _text(self, out: list[int]) -> str:
+        return self.eng.llm.detokenize(out, special=False).decode(errors="ignore")
+
+    def guess(self, text: str) -> str:
+        """The rest of the fixed piece the model is in, if any. The model's tokens do not end
+        exactly where a value ends (it may write a quote and a newline as one token), so look a
+        few characters back for the last place a fixed piece starts, and continue from there."""
+        if not self.actions:
+            return ""
+        for cut in range(len(text), max(-1, len(text) - 48), -1):
+            g = self._guess_at(text[:cut])
+            done = text[cut:]
+            if g and g.startswith(done) and len(g) > len(done):
+                return g[len(done):]
+        return ""
+
+    def _guess_at(self, text: str) -> str:
+        opening = '{\n  "plan": [\n' + self._step_open(0)
+        if len(text) < len(opening) and opening.startswith(text):
+            return opening[len(text):]
+        m = _VALUE_END.search(text)
+        if not m:
+            return ""
+        step = text.count('"action"') - 1
+        if step < 0 or step >= len(self.actions):
+            return ""
+        last = text.rfind('"params"')
+        used = re.findall(r'"([A-Za-z_]\w*)":', text[last + len('"params"'):]) if last >= 0 else []
+        order = self.keys.get(self.actions[step], [])
+        nxt = next((x for x in order if x not in used), None)
+        if nxt and (len(used) < len(order)):
+            return ",\n        " + json.dumps(nxt) + ": "
+        tail = "\n      }\n    }"
+        if step + 1 < len(self.actions):
+            return tail + ",\n" + self._step_open(step + 1)
+        return tail + "\n  ]\n}"
+
+    def __call__(self, out: list[int]) -> list[int]:
+        g = self.guess(self._text(out))
+        return self.eng.tok(g)[:self.k] if g else []

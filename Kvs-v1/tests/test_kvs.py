@@ -193,3 +193,19 @@ def test_phrasebook_finds_documented_steps():
             'bad { not json } and {"action": "WebAction", "params": {"query": "q"}}']
     acts = [s["action"] for s in example_steps(docs)]
     assert acts == ["NotesAction", "WebAction"]
+
+
+def test_structure_predictor_guesses_only_the_fixed_parts():
+    import json
+    from kvs.speculate import StructureDrafter
+    keys = {"WebAction": ["query"], "NotesAction": ["mode", "title", "text"]}
+    d = StructureDrafter(None, ["WebAction", "NotesAction"], keys)
+    plan = json.dumps({"plan": [{"action": "WebAction", "params": {"query": "q"}},
+                                {"action": "NotesAction", "params": {"mode": "create", "title": "t", "text": "x"}}]},
+                      indent=2)
+    assert plan.startswith(d.guess(""))                                    # opening + first key
+    i = plan.index('"q"') + 3
+    assert plan[i:].startswith(d.guess(plan[:i]))                          # close step 1, open step 2
+    i = plan.index('"create"') + 8
+    assert d.guess(plan[:i]) == ',\n        "title": '                    # next key
+    assert d.guess(plan[:plan.index('"q"') + 1]) == ""                     # inside a value: no guess
