@@ -64,6 +64,7 @@ kp = KVPlanner(
 | `exact_only` | none | modules for which speed mode is never used (destructive ones) |
 | `fallback` | none | your old model call; used if anything in Kvs fails, so a plan always comes back |
 | `n_batch`, `n_ubatch`, `flash_attn` | 1024, 1024, on | reading settings (fastest, same plans: see v2 benchmark); each setting gets its own cache folder |
+| `repair`, `repair_end` | 0, 0 | speed mode only: tokens at the start / end of each stitched module read fresh (see v2) |
 | `max_tokens` | 600 | longest plan |
 
 **3. On every launch, build the starts** (in the background; only the first launch, or after a
@@ -272,6 +273,47 @@ did not change a single plan.
   of what is left.
 - A repeated command (whole prompt cached, `full`) on 3 four-module commands with 2 extra
   modules from the router: 49.7–74.0 s with no cache → **7.6–12.7 s**, same plans.
+
+### Speed mode + repair
+
+Speed mode stitches each module from its own first-run start, so a module never saw the
+modules before it; it goes wrong mostly at its edges. With repair (`repair=N, repair_end=M`)
+the first N and last M tokens of every stitched module are read fresh, in their real place,
+and only the middle is stitched (the CacheBlend idea, kept simple: fixed edges instead of
+chosen tokens). Repairing a whole module makes it exact. Same 20 commands, flash attention +
+1024, structure predictor; each run compared with exact + spec in the same run:
+
+| Mode | Same plan | Median per command | vs exact |
+|---|---|---|---|
+| exact + spec | 20/20 | 23.6–25.9 s | |
+| speed, no repair (v1.5) | 9/20 | | |
+| speed, repair 32 + 16 | 11/20 | 20.1 s | ~15% faster |
+| speed, repair 128 + 64 | **16/20** | 24.0 s | ~7% faster |
+
+- 32 + 16 still broke plans badly: a garbled target on a **delete** step, a step repeated until
+  the token limit, a clipboard step without its text, a wrong file name.
+- 128 + 64 fixed those but one: 2 differences harmless (an extra time, an extra folder), 1
+  wrong but not destructive (an app opened by the folder name instead of its path), 1 loop
+  (the same step repeated to the 400-token limit). About 18/20 would run.
+- More repair = closer to exact but less faster; at 128 + 64 it saves ~2 s per command and
+  still risks a loop. **Exact + speculative writing stays the default**; repair is kept, off,
+  for anyone who wants speed mode on modules where a wrong step is cheap (destructive modules
+  always go exact through `exact_only`).
+- Repairing the joins does recover most of what stitching breaks; going further needs choosing
+  which tokens to recompute, or a model trained for independent blocks.
+
+## v2, in short
+
+| | v1 | v2 |
+|---|---|---|
+| first-time combination (20 commands) | 33.4 s, exact | **21.6 s, exact** (no cache: 36.9 s) |
+| repeated command (whole prompt cached) | 19.2 s | **7.6–12.7 s** |
+| writing | 1 token per pass | **5.47 tokens per pass** (structure predictor) |
+| reading settings | 512 / 512, off | flash attention + 1024 |
+| speed mode | 9/20 same | 16/20 with repair, off by default |
+
+Every default path gives the same plan, character for character, as reading the whole prompt
+from scratch.
 
 ## The whole way: all modules, no cache → router + Kvs
 
