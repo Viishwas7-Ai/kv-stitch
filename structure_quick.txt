@@ -1,0 +1,14 @@
+loading model ...
+8 tests x 1 way(s), drafter: structure. Each line prints when its test is done.
+
+[1/8] WEB+NOTES: exact+spec(partial) 18.3s 78tok/18passes same  — search the latest iphone price and save 
+[2/8] WEB+NOTES+REMINDER: exact+spec(partial) 27.3s 118tok/28passes same  — serach on web for latest new write into 
+[3/8] WEB+NOTES+CALENDAR: exact+spec(partial) 26.8s 113tok/33passes same  — search the latest ai news, save it in a 
+[4/8] WEB+EMAIL: exact+spec(partial) 21.6s 94tok/30passes same  — find todays weather in delhi and email i
+[5/8] NOTES+REMINDER: exact+spec(partial) 24.2s 95tok/27passes same  — make a note called groceries with milk a
+[6/8] NOTES+CLIPBOARD: exact+spec(partial) 18.2s 82tok/22passes same  — copy my note called ideas to clipboard
+[7/8] RECALL+RENAME: exact+spec(partial) 20.1s 42tok/14passes same  — find the latest download and clean its n
+[8/8] RECALL+RENAME+RELEVANT: exact+spec(partial) 31.6s 143tok/75passes same  — ok so find the late 2 downloads then cle
+
+exact+spec: same plan 8/8   median 22.9s end to end   tokens per pass 3.47   paths {'partial': 8}
+earlier run on these tests: no-cache 36.9s, exact 33.4s (20/20), speed 27.5s (9/20)

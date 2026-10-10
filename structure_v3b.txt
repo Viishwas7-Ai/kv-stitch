@@ -1,0 +1,14 @@
+loading model ...
+8 tests x 1 way(s), drafter: structure+lookup + phrasebook. Each line prints when its test is done.
+
+[1/8] WEB+NOTES: exact+spec(partial) 18.8s 78tok/13passes same [read 15.7 | draft 0.0 | check 3.1 | guessed 116, kept 65]  — search the latest iphone price and save 
+[2/8] WEB+NOTES+REMINDER: exact+spec(partial) 32.1s 118tok/18passes same [read 24.0 | draft 0.3 | check 7.8 | guessed 191, kept 100]  — serach on web for latest new write into 
+[3/8] WEB+NOTES+CALENDAR: exact+spec(partial) 22.2s 113tok/22passes same [read 17.1 | draft 0.0 | check 5.0 | guessed 202, kept 91]  — search the latest ai news, save it in a 
+[4/8] WEB+EMAIL: exact+spec(partial) 19.9s 94tok/21passes same [read 14.9 | draft 0.0 | check 5.0 | guessed 145, kept 73]  — find todays weather in delhi and email i
+[5/8] NOTES+REMINDER: exact+spec(partial) 27.5s 95tok/20passes same [read 22.2 | draft 0.0 | check 5.3 | guessed 143, kept 75]  — make a note called groceries with milk a
+[6/8] NOTES+CLIPBOARD: exact+spec(partial) 19.4s 82tok/8passes same [read 16.6 | draft 0.0 | check 2.8 | guessed 94, kept 74]  — copy my note called ideas to clipboard
+[7/8] RECALL+RENAME: exact+spec(partial) 23.4s 42tok/8passes same [read 20.6 | draft 0.0 | check 2.8 | guessed 65, kept 34]  — find the latest download and clean its n
+[8/8] RECALL+RENAME+RELEVANT: exact+spec(partial) 29.6s 143tok/20passes same [read 21.6 | draft 0.1 | check 7.8 | guessed 259, kept 123]  — ok so find the late 2 downloads then cle
+
+exact+spec: same plan 8/8   median 22.8s end to end   tokens per pass 5.62   paths {'partial': 8}
+earlier run on these tests: no-cache 36.9s, exact 33.4s (20/20), speed 27.5s (9/20)

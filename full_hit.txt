@@ -1,0 +1,13 @@
+
+loading model (context 8192) for the router's modules ...
+[1/3] WEB+NOTES+REMINDER (+CALENDAR+ZIP): full+extra 49.7s | exact+pred 41.7s same [read 35.0 | write 6.22 | 117tok/23passes] | fast+pred 36.7s DIFF [read 25.2 | write 6.43 | 118tok/26passes] | hit+pred(full) 7.6s same [read 0.1 | write 7.02 | 117tok/23passes]  — search the bitcoin price, save it in a n
+  router said: ['WebAction', 'NotesAction', 'ReminderAction', 'CalendarAction', 'ZipAction']   model wrote: ['WebAction', 'NotesAction', 'ReminderAction']
+[2/3] RECALL+RENAME+ZIP+EMAIL (+NOTES+CLIPBOARD): full+extra 58.6s | exact+pred 51.2s same [read 36.3 | write 14.29 | 168tok/46passes] | fast+pred 47.6s DIFF [read 29.5 | write 14.56 | 181tok/44passes] | hit+pred(full) 11.6s same [read 0.1 | write 10.77 | 168tok/46passes]  — find my latest 3 downloads, clean their 
+  router said: ['Recall', 'Rename', 'ZipAction', 'EmailAction', 'NotesAction', 'ClipboardAction']   model wrote: ['Recall', 'Rename', 'ZipAction', 'EmailAction']
+[3/3] CREATE+EXTENSION+FILES+ZIP (+REMINDER+OCR): full+extra 74.0s | exact+pred 57.1s same [read 45.9 | write 10.74 | 151tok/39passes] | fast+pred 44.6s DIFF [read 27.7 | write 11.12 | 152tok/37passes] | hit+pred(full) 12.7s same [read 0.8 | write 11.21 | 151tok/39passes]  — make a folder called report on desktop, 
+  router said: ['WriteToFile', 'FindFilesByExtension', 'CopyFile', 'ZipAction', 'ReminderAction', 'OCRAction']   model wrote: ['CreateFolder', 'FindFilesByExtension', 'CopyFile', 'ZipAction']
+
+full+extra : median 58.6s   tokens per pass 1.00   same as full+extra 3/3
+exact+pred : median 51.2s   tokens per pass 3.87   same as full+extra 3/3
+fast+pred  : median 44.6s   tokens per pass 4.11   same as full+extra 0/3
+hit+pred   : median 11.6s   tokens per pass 3.87   same as full+extra 3/3
