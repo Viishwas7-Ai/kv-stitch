@@ -83,6 +83,7 @@ class KVPlanner:
                  max_disk_mb: float | None = 3000, max_in_memory: int = 2,
                  versions_per_slot: int = 1, checkpoints: int = 2,
                  exact_only: set[str] | None = None, spec: bool = True, spec_k: int = 12,
+                 repair: int = 0, repair_end: int = 0,
                  fallback: Callable[[str, str], str] | None = None):
         """
         models:      {"granite4:micro": "/path/to/gguf", ...}; a model not listed here is
@@ -97,6 +98,10 @@ class KVPlanner:
         checkpoints: also save the start up to the first N modules on the way
         exact_only:  module names that always take the exact path, even when speed mode is
                      asked for (e.g. {"DELETE", "RENAME", "FILES"}: a wrong step is costly)
+        repair, repair_end: speed mode only (off by default): read the first `repair` and the
+                     last `repair_end` tokens of every stitched module fresh, in their real
+                     place, and stitch only the middle (CacheBlend-like). Closer to the exact
+                     plan, a little slower; a whole module repaired = exact
         spec:        speculative writing (same plan, fewer passes); spec_k guesses per pass
         fallback:    fallback(model_name, prompt_text) -> plan text, used if anything fails
         """
@@ -110,6 +115,7 @@ class KVPlanner:
         self.fallback = fallback
         self.exact_only = set(exact_only or ())
         self.spec, self.spec_k = spec, spec_k
+        self.repair, self.repair_end = max(0, repair), max(0, repair_end)
         self.model: str | None = None
         self.eng: Engine | None = None
         self.cache: PrefixCache | None = None
@@ -225,16 +231,26 @@ class KVPlanner:
             k, slot, text, _ = self._entry(runs, names, texts, start)
             self.cache.write(k, slot, self.eng.save(), pos, text)
         b = sum(len(x) for x in runs[:base])
+        repaired = 0
         for L in range(start + 1, n + 1):
             r = L - 1
             if r in mod_keys:
-                state, _ = self.cache.read(mod_keys[r])
-                self.eng.stitch(state, b, b + len(runs[r]), pos)
-                self.cache.touch(mod_keys[r])
+                L_r = len(runs[r])
+                h = min(self.repair, L_r)                       # repair: read the first h tokens
+                e = min(self.repair_end, L_r - h)               # and the last e tokens fresh
+                if h:
+                    self.eng.decode(runs[r][:h], pos)
+                if h + e < L_r:
+                    state, _ = self.cache.read(mod_keys[r])
+                    self.eng.stitch(state, b + h, b + L_r - e, pos + h)
+                    self.cache.touch(mod_keys[r])
+                if e:
+                    self.eng.decode(runs[r][L_r - e:], pos + L_r - e)
+                repaired += h + e
             else:
                 self.eng.decode(runs[r], pos)
             pos += len(runs[r])
-        return pos, "fast", {"cached_pieces": start, "stitched": len(stitch)}
+        return pos, "fast", {"cached_pieces": start, "stitched": len(stitch), "repaired": repaired}
 
     # ---------- public ----------
     def plan(self, model: str, header: str, pieces: list[Piece], tail: str,

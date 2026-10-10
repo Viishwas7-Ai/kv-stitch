@@ -238,3 +238,18 @@ def test_plan_spec_default_gives_the_plain_plan(tmp_path):
         ra, rb = a.plan("tiny", HEADER, pieces, TAIL), b.plan("tiny", HEADER, pieces, TAIL)
         assert ra.text == rb.text and ra.detail["passes"] <= ra.detail["gen_tokens"]
         a.close(), b.close()
+
+
+def test_speed_mode_repair_of_whole_modules_is_exact(kp):
+    pieces = [GLUE, CREATE, NOTES, ZIP, RULES]
+    ref = reference(kp, pieces)
+    kp.build_starts("tiny", HEADER, [[GLUE, CREATE], [GLUE, NOTES], [GLUE, ZIP]])
+    kp.repair = 1000                                 # every stitched module read fresh
+    r = kp.plan("tiny", HEADER, pieces, TAIL, fast=True)
+    assert r.path == "fast" and r.detail["repaired"] > 0 and r.text == ref
+    kp.repair, kp.repair_end = 2, 2                  # partly repaired: runs, still stitches
+    for k in [k for k, e in kp.cache.index.items() if not e.get("pinned")]:
+        if k in kp.cache.index:
+            kp.cache._delete(k)
+    r = kp.plan("tiny", HEADER, pieces, TAIL, fast=True)
+    assert r.path == "fast" and r.detail["repaired"] > 0

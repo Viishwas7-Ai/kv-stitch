@@ -53,6 +53,10 @@ ap.add_argument("--show", action="store_true")
 ap.add_argument("--n-batch", type=int, default=512, help="prompt tokens read per step")
 ap.add_argument("--n-ubatch", type=int, default=512, help="prompt tokens computed at once (<= n-batch)")
 ap.add_argument("--flash-attn", action="store_true", help="llama.cpp flash attention")
+ap.add_argument("--repair", type=int, default=0,
+                help="speed mode: read the first N tokens of every stitched module fresh")
+ap.add_argument("--repair-end", type=int, default=0,
+                help="speed mode: read the last N tokens of every stitched module fresh")
 ap.add_argument("--starts", default="", help="comma list of modules to build as first-run starts, or 'all' (every module in the tests)")
 ap.add_argument("--keep-cached", action="store_true",
                 help="use whatever is cached; by default each test starts like a first-time "
@@ -81,11 +85,13 @@ norm = lambda s: s.strip().replace("\n", " ")
 ACT = re.compile(r'"action"\s*:\s*"([^"]+)"')
 
 kp = KVPlanner({a.model: a.gguf} if a.gguf else {}, a.cache_root, n_ctx=a.n_ctx, max_tokens=a.max_tokens,
-               n_batch=a.n_batch, n_ubatch=a.n_ubatch, flash_attn=a.flash_attn)
+               n_batch=a.n_batch, n_ubatch=a.n_ubatch, flash_attn=a.flash_attn,
+               repair=a.repair, repair_end=a.repair_end)
 print("loading model ...", flush=True)
 kp.load(a.model)
 eng = kp.eng
-print(f"settings: n_batch {eng.n_batch}, n_ubatch {eng.n_ubatch}, flash_attn {eng.flash_attn}   "
+print(f"settings: n_batch {eng.n_batch}, n_ubatch {eng.n_ubatch}, flash_attn {eng.flash_attn}, "
+      f"repair {a.repair}+{a.repair_end}   "
       f"cache folder {kp.cache.dir}", flush=True)
 starts = sorted({m for mods, _ in tests for m in mods}) if a.starts == "all" else \
     [x.strip() for x in a.starts.split(",") if x.strip()]
@@ -149,6 +155,8 @@ for i, (mods, cmd) in enumerate(tests, 1):
         row.append(f"{w}({path}) {secs:.1f}s {st['tokens']}tok/{st['passes']}passes{mark} "
                    f"[read {t_read:.1f} | draft {st['draft_s']:.1f} | check {st['check_s']:.1f} | "
                    f"guessed {st['drafted']}, kept {st['accepted']}]")
+        if a.show and ok is not True and refs:
+            print(f"  ref:   ", refs[i - 1])
         if a.show and ok is not True:
             print(f"  {w}:", norm(text))
     print(f"[{i}/{len(tests)}] {'+'.join(mods)}: " + " | ".join(row) + f"  — {cmd[:40]}", flush=True)
